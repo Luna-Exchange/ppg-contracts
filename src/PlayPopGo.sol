@@ -112,8 +112,7 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         address receiver = msg.sender;
         uint256 tokenId = totalSupply() + 1;
 
-        if (!_verify(_leaf(receiver), proof))
-            revert InvalidMerkleProof(receiver, proof);
+        if (!_verify(_leaf(receiver), proof)) revert InvalidMerkleProof(receiver, proof);
 
         if (tokenId > MAX_SUPPLY) revert MaxSupplyReached();
         _safeMint(receiver, tokenId);
@@ -124,12 +123,10 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
 
         if (amount == 0) revert InvalidAmount();
         if (totalSupply + amount > MAX_SUPPLY) revert MaxSupplyReached();
-        if (amount > MAX_MINT_PER_ADDRESS)
-            revert MaxMintPerAddressSurpassed(amount, MAX_MINT_PER_ADDRESS);
+        if (amount > MAX_MINT_PER_ADDRESS) revert MaxMintPerAddressSurpassed(amount, MAX_MINT_PER_ADDRESS);
         if (msg.value < MINT_COST * amount) revert InsufficientFunds();
 
-        for (uint256 i = 1; i <= amount; i++)
-            _safeMint(msg.sender, totalSupply + i);
+        for (uint256 i = 1; i <= amount; i++) _safeMint(msg.sender, totalSupply + i);
     }
 
     function setBaseURI(string memory baseURI) external onlyOwner {
@@ -140,9 +137,7 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function tokenURI(
-        uint256 tokenId
-    ) public view override returns (string memory) {
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (!_exists(tokenId)) revert NonExistentToken();
         string memory base = _baseURI();
         string memory id = Strings.toString(tokenId);
@@ -150,17 +145,11 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         return string(abi.encodePacked(base, id, json));
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function requestRandomOffset()
-        public
-        onlyOwner
-        returns (uint256 requestId)
-    {
+    function requestRandomOffset() public onlyOwner returns (uint256 requestId) {
         // Function is only callable once
         if (_offsetRequested) revert OffsetAlreadyRequested();
 
@@ -191,17 +180,11 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         return keccak256(abi.encodePacked(receiver));
     }
 
-    function _verify(
-        bytes32 leaf,
-        bytes32[] calldata proof
-    ) internal view returns (bool) {
+    function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
         return MerkleProofLib.verify(proof, _root, leaf);
     }
 
-    function fulfillRandomWords(
-        uint256,
-        uint256[] memory randomWords
-    ) internal override {
+    function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
         _offset = randomWords[0];
         emit OffsetRequestFulfilled(_offset);
     }
