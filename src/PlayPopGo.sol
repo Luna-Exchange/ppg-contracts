@@ -3,50 +3,60 @@ pragma solidity 0.8.17;
 
 import "openzeppelin/access/Ownable.sol";
 import "openzeppelin/token/ERC721/extensions/ERC721Enumerable.sol";
-import "openzeppelin/utils/Strings.sol";
-import "chainlink-contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "chainlink-contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "chainlink/v0.8/VRFConsumerBaseV2.sol";
+import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "solmate/utils/MerkleProofLib.sol";
+import "solmate/utils/LibString.sol";
 
 contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
-    // STRUCTS
+    using LibString for uint256;
+    /*//////////////////////////////////////////////////////////////
+                             CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
-    struct Metadata {
-        uint256 startIndex;
-        uint256 endIndex;
-        uint256 entropy;
-    }
+    uint256 public constant MAX_MINT_PER_ADDRESS = 5;
+    string public constant IPFS_JSON_HASH = "HASH"; // IPFS JSON HASH TODO: Update this
 
-    // IPFS JSON HASH
-    // TODO: Update this
-    string public constant IPFS_JSON_HASH = "HASH";
-
-    // VRF CONSTANTS & IMMUTABLE
+    // CHAINLINK VRF
     uint16 private constant VRF_REQUEST_CONFIRMATIONS = 3;
     uint32 private constant VRF_NUM_WORDS = 1;
 
-    // VRF SETUP
+    /*//////////////////////////////////////////////////////////////
+                            IMMUTABLE STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    // CHAINLINK VRF
     VRFCoordinatorV2Interface private immutable VRF_COORDINATOR_V2;
     uint64 private immutable VRF_SUBSCRIPTION_ID;
     bytes32 private immutable VRF_GA_LANE;
     uint32 private immutable VRF_CALLBACK_GA_LIMIT;
 
-    // IMMUTABLE STORAGE
+    // TOKEN STORAGE
     uint256 public immutable MAX_SUPPLY;
     uint256 public immutable MINT_COST;
 
-    // MUTABLE STORAGE
+    /*//////////////////////////////////////////////////////////////
+                            MUTABLE STORAGE
+    //////////////////////////////////////////////////////////////*/
+
     uint256 public _offset;
     bool public _offsetRequested;
     string public _uri;
+    bytes32 public _root;
 
-    // EVENTS
+    /*//////////////////////////////////////////////////////////////
+                               EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     event BatchRevealRequested(uint256 requestId);
     event BatchRevealFinished(uint256 startIndex, uint256 endIndex);
     event OffsetRequested(uint256 requestId);
     event OffsetRequestFulfilled(uint256 offset);
+    event RootUpdated(bytes32 root);
 
-    // ERRORS
+    /*//////////////////////////////////////////////////////////////
+                               ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     error InvalidAmount();
     error MaxSupplyReached();
@@ -57,6 +67,12 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     error WithdrawProceedsFailed();
     error NonExistentToken();
     error OffsetAlreadyRequested();
+    error InvalidMerkleProof(address receiver, bytes32[] proof);
+    error MaxMintPerAddressSurpassed(uint256 amount, uint256 maxMintPerAddress);
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(
         string memory baseURI,
@@ -78,21 +94,51 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         VRF_CALLBACK_GA_LIMIT = vrfCallbackGasLimit;
     }
 
-    function mint(uint256 _amount) external payable {
-        uint256 totalSupply = totalSupply();
-        if (_amount == 0) revert InvalidAmount();
-        if (totalSupply + _amount > MAX_SUPPLY) revert MaxSupplyReached();
-        if (msg.value < MINT_COST * _amount) revert InsufficientFunds();
-        for (uint256 i = 1; i <= _amount; i++)
-            _safeMint(msg.sender, totalSupply + i);
-    }
+    /*//////////////////////////////////////////////////////////////
+                            EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function withdrawProceeds() external onlyOwner {
         (bool sent, ) = payable(owner()).call{value: address(this).balance}("");
         if (!sent) revert WithdrawProceedsFailed();
     }
 
-    // SETTERS
+    function setDreamBoxRoot(bytes32 root) external onlyOwner {
+        _root = root;
+        emit RootUpdated(root);
+    }
+
+    function privateMint(bytes32[] calldata proof) external {
+        address receiver = msg.sender;
+        uint256 tokenId = totalSupply() + 1;
+
+        if (!_verify(_leaf(receiver), proof))
+            revert InvalidMerkleProof(receiver, proof);
+
+        if (tokenId > MAX_SUPPLY) revert MaxSupplyReached();
+        _safeMint(receiver, tokenId);
+    }
+
+    function publicMint(uint256 amount) external payable {
+        uint256 totalSupply = totalSupply();
+
+        if (amount == 0) revert InvalidAmount();
+        if (totalSupply + amount > MAX_SUPPLY) revert MaxSupplyReached();
+        if (amount > MAX_MINT_PER_ADDRESS)
+            revert MaxMintPerAddressSurpassed(amount, MAX_MINT_PER_ADDRESS);
+        if (msg.value < MINT_COST * amount) revert InsufficientFunds();
+
+        for (uint256 i = 1; i <= amount; i++)
+            _safeMint(msg.sender, totalSupply + i);
+    }
+
+    function setBaseURI(string memory baseURI) external onlyOwner {
+        _setBaseURI(baseURI);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            PUBLIC FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function tokenURI(
         uint256 tokenId
@@ -104,27 +150,18 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         return string(abi.encodePacked(base, id, json));
     }
 
-    // ERC721 Metadata
-    function _baseURI() internal view override returns (string memory) {
-        return _uri;
-    }
-
-    function setBaseURI(string memory baseURI) external onlyOwner {
-        _setBaseURI(baseURI);
-    }
-
-    function _setBaseURI(string memory baseURI) internal {
-        _uri = baseURI;
-    }
-
     function supportsInterface(
         bytes4 interfaceId
     ) public view override returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    // This function initiates a batch reveal of pending metadata if the reveal criteria are met.
-    function revealPendingMetadata() public returns (uint256 requestId) {
+    function requestRandomOffset()
+        public
+        onlyOwner
+        returns (uint256 requestId)
+    {
+        // Function is only callable once
         if (_offsetRequested) revert OffsetAlreadyRequested();
 
         requestId = VRF_COORDINATOR_V2.requestRandomWords(
@@ -138,7 +175,28 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         emit OffsetRequested(requestId);
     }
 
-    // VRF
+    /*//////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function _baseURI() internal view override returns (string memory) {
+        return _uri;
+    }
+
+    function _setBaseURI(string memory baseURI) internal {
+        _uri = baseURI;
+    }
+
+    function _leaf(address receiver) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(receiver));
+    }
+
+    function _verify(
+        bytes32 leaf,
+        bytes32[] calldata proof
+    ) internal view returns (bool) {
+        return MerkleProofLib.verify(proof, _root, leaf);
+    }
 
     function fulfillRandomWords(
         uint256,
