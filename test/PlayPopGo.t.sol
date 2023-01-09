@@ -168,7 +168,7 @@ contract PlayPopGoTest is Test {
         string memory tokenURI1 = playPopGo.tokenURI(1);
         assertEq(tokenURI1, "https://baseURI/9999.json");
         string memory tokenURI2 = playPopGo.tokenURI(2);
-        assertEq(tokenURI2, "https://baseURI/10000.json");
+        assertEq(tokenURI2, "https://baseURI/0.json");
         string memory tokenURI3 = playPopGo.tokenURI(3);
         assertEq(tokenURI3, "https://baseURI/1.json");
     }

@@ -145,9 +145,9 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         // If metadata is unrevealed, return the unrevealed URI
         if (!_offsetFulfilled) return _unrevealedURI;
 
-        uint256 formattedID = _formatURIID(tokenId);
+        uint256 formattedID = (tokenId + _offset) % MAX_SUPPLY;
         string memory base = _baseURI();
-        string memory uriID = Strings.toString(formattedID);
+        string memory uriID = LibString.toString(formattedID);
         string memory json = ".json";
         return string(abi.encodePacked(base, uriID, json));
     }
@@ -189,11 +189,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
 
     function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
         return MerkleProofLib.verify(proof, _root, leaf);
-    }
-
-    function _formatURIID(uint256 tokenId) internal view returns (uint256) {
-        if ((tokenId + _offset) > MAX_SUPPLY) return (tokenId + _offset) - MAX_SUPPLY;
-        return tokenId + _offset;
     }
 
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
