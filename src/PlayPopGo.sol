@@ -2,13 +2,13 @@
 pragma solidity 0.8.17;
 
 import "openzeppelin/access/Ownable.sol";
-import "openzeppelin/token/ERC721/extensions/ERC721Enumerable.sol";
+import "openzeppelin/token/ERC721/ERC721.sol";
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "solmate/utils/MerkleProofLib.sol";
 import "solmate/utils/LibString.sol";
 
-contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
+contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     using LibString for uint256;
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -37,6 +37,8 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     /*//////////////////////////////////////////////////////////////
                             MUTABLE STORAGE
     //////////////////////////////////////////////////////////////*/
+
+    uint256 public _mintCount;
 
     uint256 public _offset;
     bool public _offsetRequested;
@@ -114,23 +116,23 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
 
     function privateMint(bytes32[] calldata proof) external {
         address receiver = msg.sender;
-        uint256 tokenId = totalSupply() + 1;
+        uint256 tokenId = _mintCount + 1;
 
         if (!_verify(_leaf(receiver), proof)) revert InvalidMerkleProof(receiver, proof);
 
         if (tokenId > MAX_SUPPLY) revert MaxSupplyReached();
-        _safeMint(receiver, tokenId);
+        _mint(receiver, tokenId);
+        ++_mintCount;
     }
 
     function publicMint(uint256 amount) external payable {
-        uint256 totalSupply = totalSupply();
-
         if (amount == 0) revert InvalidAmount();
-        if (totalSupply + amount > MAX_SUPPLY) revert MaxSupplyReached();
+        if (_mintCount + amount > MAX_SUPPLY) revert MaxSupplyReached();
         if (amount > MAX_MINT_PER_ADDRESS) revert MaxMintPerAddressSurpassed(amount, MAX_MINT_PER_ADDRESS);
         if (msg.value < MINT_COST * amount) revert InsufficientFunds();
 
-        for (uint256 i = 1; i <= amount; i++) _safeMint(msg.sender, totalSupply + i);
+        for (uint256 i = 1; i <= amount; i++) _mint(msg.sender, _mintCount + i);
+        ++_mintCount;
     }
 
     /*//////////////////////////////////////////////////////////////
