@@ -15,7 +15,6 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     //////////////////////////////////////////////////////////////*/
 
     uint256 public constant MAX_MINT_PER_ADDRESS = 5;
-    string public constant IPFS_JSON_HASH = "HASH"; // IPFS JSON HASH TODO: Update this
 
     // CHAINLINK VRF
     uint16 private constant VRF_REQUEST_CONFIRMATIONS = 3;
@@ -28,7 +27,7 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     // CHAINLINK VRF
     VRFCoordinatorV2Interface private immutable VRF_COORDINATOR_V2;
     uint64 private immutable VRF_SUBSCRIPTION_ID;
-    bytes32 private immutable VRF_GA_LANE;
+    bytes32 private immutable VRF_GAS_LANE;
     uint32 private immutable VRF_CALLBACK_GA_LIMIT;
 
     // TOKEN STORAGE
@@ -41,7 +40,10 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
 
     uint256 public _offset;
     bool public _offsetRequested;
+    bool public _offsetFulfilled;
     string public _uri;
+    string public _unrevealedURI;
+    bool public _revealed;
     bytes32 public _root;
 
     /*//////////////////////////////////////////////////////////////
@@ -78,6 +80,7 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         string memory baseURI,
         string memory name,
         string memory symbol,
+        string memory unrevealedURI,
         uint256 maxSupply,
         uint256 mintCost,
         address vrfCoordinatorV2,
@@ -86,11 +89,12 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         uint32 vrfCallbackGasLimit
     ) ERC721(name, symbol) VRFConsumerBaseV2(vrfCoordinatorV2) {
         _setBaseURI(baseURI);
+        _unrevealedURI = unrevealedURI;
         MAX_SUPPLY = maxSupply;
         MINT_COST = mintCost;
         VRF_COORDINATOR_V2 = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         VRF_SUBSCRIPTION_ID = vrfSubscriptionId;
-        VRF_GA_LANE = vrfGasLane;
+        VRF_GAS_LANE = vrfGasLane;
         VRF_CALLBACK_GA_LIMIT = vrfCallbackGasLimit;
     }
 
@@ -139,10 +143,15 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (!_exists(tokenId)) revert NonExistentToken();
+
+        // If metadata is unrevealed, return the unrevealed URI
+        if (!_offsetFulfilled) return _unrevealedURI;
+        uint256 formattedID = _formatURIID(tokenId);
+
         string memory base = _baseURI();
-        string memory id = Strings.toString(tokenId);
+        string memory uriID = Strings.toString(formattedID);
         string memory json = ".json";
-        return string(abi.encodePacked(base, id, json));
+        return string(abi.encodePacked(base, uriID, json));
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
@@ -154,7 +163,7 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         if (_offsetRequested) revert OffsetAlreadyRequested();
 
         requestId = VRF_COORDINATOR_V2.requestRandomWords(
-            VRF_GA_LANE,
+            VRF_GAS_LANE,
             VRF_SUBSCRIPTION_ID,
             VRF_REQUEST_CONFIRMATIONS,
             VRF_CALLBACK_GA_LIMIT,
@@ -184,8 +193,19 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         return MerkleProofLib.verify(proof, _root, leaf);
     }
 
+    function _formatURIID(uint256 tokenId) internal view returns (uint256) {
+        uint256 formattedID;
+
+        if ((tokenId + _offset) > MAX_SUPPLY) {
+            formattedID = (tokenId + _offset) - MAX_SUPPLY;
+            return formattedID;
+        }
+        return tokenId + _offset;
+    }
+
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
         _offset = randomWords[0];
+        _offsetFulfilled = true;
         emit OffsetRequestFulfilled(_offset);
     }
 }

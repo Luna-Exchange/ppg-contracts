@@ -5,9 +5,14 @@ import "forge-std/Test.sol";
 import {PlayPopGo} from "../src/PlayPopGo.sol";
 import {MerkleProofLib} from "solmate/utils/MerkleProofLib.sol";
 import {MerkleTree} from "./utils/MerkleTree/MerkleTree.sol";
+import {VRFCoordinatorV2Mock} from "./utils/mocks/VRFCoordinatorV2Mock.sol";
+import {LinkTokenMock} from "./utils/mocks/LinkTokenMock.sol";
 
 contract PlayPopGoTest is Test {
     PlayPopGo playPopGo;
+    VRFCoordinatorV2Mock vrfCoordinator;
+    LinkTokenMock linkToken;
+
     address owner;
     address minter;
 
@@ -15,12 +20,11 @@ contract PlayPopGoTest is Test {
     string public baseURI = "https://baseURI/";
     string public name = "PlayPopGo";
     string public symbol = "PPG";
+    string public unrevealedURI = "https://unrevealedURI/";
     uint256 public maxSupply = 10000;
     uint256 public mintCost = 0.1 ether;
     uint64 vrfSubscriptionId = 5;
-    address vrfCoordinatorV2 =
-        address(0x0000000000000000000000000000000000000009);
-    bytes32 vrfGaLane = bytes32("gaslane");
+    bytes32 vrfGasLane = bytes32("gaslane");
     uint32 vrfCallbackGasLimit = 1000000;
 
     // ---------- MERKLE TREE ----------
@@ -34,16 +38,19 @@ contract PlayPopGoTest is Test {
         vm.deal(owner, 100 ether);
         vm.deal(minter, 100 ether);
 
-        vm.prank(owner);
+        vm.startPrank(owner);
+        linkToken = new LinkTokenMock();
+        vrfCoordinator = new VRFCoordinatorV2Mock(10 * 3, 10 * 3);
         playPopGo = new PlayPopGo(
             baseURI,
             name,
             symbol,
+            unrevealedURI,
             maxSupply,
             mintCost,
-            vrfCoordinatorV2,
+            address(vrfCoordinator),
             vrfSubscriptionId,
-            vrfGaLane,
+            vrfGasLane,
             vrfCallbackGasLimit
         );
 
@@ -55,6 +62,7 @@ contract PlayPopGoTest is Test {
         mt.addLeaf(hashedMinter, false);
         root = mt.getRoot();
         proof = mt.getProof(hashedMinter);
+        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -88,13 +96,7 @@ contract PlayPopGoTest is Test {
 
     function test_publicMintMaxMintPerAddressSurpassed() public {
         vm.startPrank(minter);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                PlayPopGo.MaxMintPerAddressSurpassed.selector,
-                9999,
-                5
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.MaxMintPerAddressSurpassed.selector, 9999, 5));
         playPopGo.publicMint(9999);
     }
 
@@ -129,18 +131,45 @@ contract PlayPopGoTest is Test {
         assertEq(playPopGo._uri(), "https://newBaseURI/");
     }
 
-    function test_tokenURI() public {
+    /*//////////////////////////////////////////////////////////////
+                            tokenURI TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_tokenURINonExistentToken() public {
         vm.startPrank(minter);
 
         // Reverts if no token has been minted
-        vm.expectRevert(bytes4(keccak256("NonExistentToken()")));
+        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.NonExistentToken.selector));
         playPopGo.tokenURI(1);
+    }
 
+    function test_tokenURIUnrevealed() public {
         // Mints a token and checks the tokenURI is correct
+        vm.startPrank(minter);
         playPopGo.publicMint{value: 0.1 ether}(1);
         string memory tokenURI = playPopGo.tokenURI(1);
-        assertEq(tokenURI, "https://baseURI/1.json");
-
+        assertEq(tokenURI, unrevealedURI);
         vm.stopPrank();
+    }
+
+    function test_tokenURIRevealed() public {
+        // Start off by requesting random offset
+        vm.prank(owner);
+        uint256 requestId = playPopGo.requestRandomOffset();
+        // Create a uint256 array and push 100
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = 9998;
+        vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
+
+        // Mints a token and checks the tokenURI is correct
+        vm.prank(minter);
+        playPopGo.publicMint{value: 0.3 ether}(3);
+
+        string memory tokenURI1 = playPopGo.tokenURI(1);
+        assertEq(tokenURI1, "https://baseURI/9999.json");
+        string memory tokenURI2 = playPopGo.tokenURI(2);
+        assertEq(tokenURI2, "https://baseURI/10000.json");
+        string memory tokenURI3 = playPopGo.tokenURI(3);
+        assertEq(tokenURI3, "https://baseURI/1.json");
     }
 }
