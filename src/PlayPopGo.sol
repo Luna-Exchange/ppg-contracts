@@ -41,17 +41,16 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     uint256 public _offset;
     bool public _offsetRequested;
     bool public _offsetFulfilled;
+
     string public _uri;
     string public _unrevealedURI;
-    bool public _revealed;
+
     bytes32 public _root;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event BatchRevealRequested(uint256 requestId);
-    event BatchRevealFinished(uint256 startIndex, uint256 endIndex);
     event OffsetRequested(uint256 requestId);
     event OffsetRequestFulfilled(uint256 offset);
     event RootUpdated(bytes32 root);
@@ -63,9 +62,6 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     error InvalidAmount();
     error MaxSupplyReached();
     error InsufficientFunds();
-    error RevealCriteriaNotMet();
-    error RevealInProgress();
-    error InsufficientLINK();
     error WithdrawProceedsFailed();
     error NonExistentToken();
     error OffsetAlreadyRequested();
@@ -112,6 +108,10 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         emit RootUpdated(root);
     }
 
+    function setBaseURI(string memory baseURI) external onlyOwner {
+        _setBaseURI(baseURI);
+    }
+
     function privateMint(bytes32[] calldata proof) external {
         address receiver = msg.sender;
         uint256 tokenId = totalSupply() + 1;
@@ -133,10 +133,6 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
         for (uint256 i = 1; i <= amount; i++) _safeMint(msg.sender, totalSupply + i);
     }
 
-    function setBaseURI(string memory baseURI) external onlyOwner {
-        _setBaseURI(baseURI);
-    }
-
     /*//////////////////////////////////////////////////////////////
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -146,8 +142,8 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
 
         // If metadata is unrevealed, return the unrevealed URI
         if (!_offsetFulfilled) return _unrevealedURI;
-        uint256 formattedID = _formatURIID(tokenId);
 
+        uint256 formattedID = _formatURIID(tokenId);
         string memory base = _baseURI();
         string memory uriID = Strings.toString(formattedID);
         string memory json = ".json";
@@ -194,17 +190,12 @@ contract PlayPopGo is ERC721Enumerable, Ownable, VRFConsumerBaseV2 {
     }
 
     function _formatURIID(uint256 tokenId) internal view returns (uint256) {
-        uint256 formattedID;
-
-        if ((tokenId + _offset) > MAX_SUPPLY) {
-            formattedID = (tokenId + _offset) - MAX_SUPPLY;
-            return formattedID;
-        }
+        if ((tokenId + _offset) > MAX_SUPPLY) return (tokenId + _offset) - MAX_SUPPLY;
         return tokenId + _offset;
     }
 
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
-        _offset = randomWords[0];
+        _offset = randomWords[0] % MAX_SUPPLY;
         _offsetFulfilled = true;
         emit OffsetRequestFulfilled(_offset);
     }
