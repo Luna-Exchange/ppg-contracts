@@ -15,6 +15,7 @@ contract PlayPopGoTest is Test {
 
     address owner;
     address minter;
+    address withdrawAddress;
 
     // ---------- CONSTRUCTOR ARGS ----------
     string public baseURI = "https://baseURI/";
@@ -33,18 +34,19 @@ contract PlayPopGoTest is Test {
     bytes32[] proof;
 
     function setUp() public {
+        withdrawAddress = makeAddr("withdrawAddress");
         owner = makeAddr("owner");
         minter = makeAddr("minter");
         vm.deal(owner, 100 ether);
         vm.deal(minter, 100 ether);
+        vm.deal(withdrawAddress, 100 ether);
 
         vm.startPrank(owner);
         linkToken = new LinkTokenMock();
         vrfCoordinator = new VRFCoordinatorV2Mock(10 * 3, 10 * 3);
         playPopGo = new PlayPopGo(
+            withdrawAddress,
             baseURI,
-            name,
-            symbol,
             unrevealedURI,
             maxSupply,
             mintCost,
@@ -62,6 +64,8 @@ contract PlayPopGoTest is Test {
         mt.addLeaf(hashedMinter, false);
         root = mt.getRoot();
         proof = mt.getProof(hashedMinter);
+
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
         vm.stopPrank();
     }
 
@@ -73,41 +77,44 @@ contract PlayPopGoTest is Test {
         vm.prank(owner);
         playPopGo.setDreamBoxRoot(root);
 
-        vm.prank(minter);
-        playPopGo.privateMint(proof);
+        vm.prank(minter, address(minter));
+        playPopGo.dreamboxMint(proof);
         assertEq(playPopGo.balanceOf(minter), 1);
     }
+
+    // TODO: finish testing here
 
     /*//////////////////////////////////////////////////////////////
                             publicMint TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_publicMint() public {
-        vm.prank(minter);
-        playPopGo.publicMint{value: 0.5 ether}(5);
-        assertEq(playPopGo.balanceOf(minter), 5);
+        vm.prank(minter, address(minter));
+        playPopGo.publicMint{value: 0.2 ether}(2);
+        assertEq(playPopGo.balanceOf(minter), 2);
     }
 
     function test_publicMintInvalidAmount() public {
-        vm.startPrank(minter);
+        vm.startPrank(minter, address(minter));
         vm.expectRevert(PlayPopGo.InvalidAmount.selector);
         playPopGo.publicMint(0);
     }
 
     function test_publicMintMaxMintPerAddressSurpassed() public {
-        vm.startPrank(minter);
-        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.MaxMintPerAddressSurpassed.selector, 9999, 5));
-        playPopGo.publicMint(9999);
+        vm.startPrank(minter, address(minter));
+        playPopGo.publicMint{value: 0.2 ether}(2);
+        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.MaxMintPerAddressSurpassed.selector, 2, 2));
+        playPopGo.publicMint{value: 90 ether}(99);
     }
 
     function test_publicMintMaxSupplyReached() public {
-        vm.startPrank(minter);
+        vm.startPrank(minter, address(minter));
         vm.expectRevert(PlayPopGo.MaxSupplyReached.selector);
         playPopGo.publicMint(10001);
     }
 
     function test_publicMintInsufficientFunds() public {
-        vm.startPrank(minter);
+        vm.startPrank(minter, address(minter));
         vm.expectRevert(PlayPopGo.InsufficientFunds.selector);
         playPopGo.publicMint(1);
     }
@@ -145,7 +152,7 @@ contract PlayPopGoTest is Test {
 
     function test_tokenURIUnrevealed() public {
         // Mints a token and checks the tokenURI is correct
-        vm.startPrank(minter);
+        vm.startPrank(minter, address(minter));
         playPopGo.publicMint{value: 0.1 ether}(1);
         string memory tokenURI = playPopGo.tokenURI(1);
         assertEq(tokenURI, unrevealedURI);
@@ -155,21 +162,19 @@ contract PlayPopGoTest is Test {
     function test_tokenURIRevealed() public {
         // Start off by requesting random offset
         vm.prank(owner);
-        uint256 requestId = playPopGo.requestRandomOffset();
+        uint256 requestId = playPopGo.startReveal();
         // Create a uint256 array and push 100
         uint256[] memory randomWords = new uint256[](1);
         randomWords[0] = 9998;
         vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
 
         // Mints a token and checks the tokenURI is correct
-        vm.prank(minter);
-        playPopGo.publicMint{value: 0.3 ether}(3);
+        vm.prank(minter, address(minter));
+        playPopGo.publicMint{value: 0.2 ether}(2);
 
         string memory tokenURI1 = playPopGo.tokenURI(1);
-        assertEq(tokenURI1, "https://baseURI/9999.json");
+        assertEq(tokenURI1, "https://baseURI/9999");
         string memory tokenURI2 = playPopGo.tokenURI(2);
-        assertEq(tokenURI2, "https://baseURI/0.json");
-        string memory tokenURI3 = playPopGo.tokenURI(3);
-        assertEq(tokenURI3, "https://baseURI/1.json");
+        assertEq(tokenURI2, "https://baseURI/0");
     }
 }

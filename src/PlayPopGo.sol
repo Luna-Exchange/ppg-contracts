@@ -9,12 +9,19 @@ import "solmate/utils/MerkleProofLib.sol";
 import "solmate/utils/LibString.sol";
 
 contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
+    enum SaleStatus {
+        PAUSED,
+        DREAMBOX,
+        OPEN,
+        CLOSED
+    }
+
     using LibString for uint256;
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant MAX_MINT_PER_ADDRESS = 5;
+    uint256 public constant MAX_MINT_PER_ADDRESS = 2;
 
     // CHAINLINK VRF
     uint16 private constant VRF_REQUEST_CONFIRMATIONS = 3;
@@ -38,22 +45,25 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             MUTABLE STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public _mintCount;
+    SaleStatus public _saleStatus;
 
+    // REVEAL
     uint256 public _offset;
-    bool public _offsetRequested;
-    bool public _offsetFulfilled;
-
+    bool public _revealed;
     string public _uri;
-    string public _unrevealedURI;
+    string public _prerevealURI;
 
+    uint256 public _mintCount;
+    address public _withdrawAddress;
     bytes32 public _root;
+
+    mapping(address => uint256) _addressMintCount;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event OffsetRequested(uint256 requestId);
+    event Revealed(uint256 requestId);
     event OffsetRequestFulfilled(uint256 offset);
     event RootUpdated(bytes32 root);
 
@@ -61,33 +71,45 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                                ERRORS
     //////////////////////////////////////////////////////////////*/
 
+    error SaleIsNotOpen();
+    error SaleIsClosed();
     error InvalidAmount();
     error MaxSupplyReached();
     error InsufficientFunds();
     error WithdrawProceedsFailed();
     error NonExistentToken();
-    error OffsetAlreadyRequested();
+    error AlreadyRevealed();
     error InvalidMerkleProof(address receiver, bytes32[] proof);
     error MaxMintPerAddressSurpassed(uint256 amount, uint256 maxMintPerAddress);
+
+    /*//////////////////////////////////////////////////////////////
+                              MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier callerIsReceiver() {
+        require(tx.origin == msg.sender, "The caller is another contract");
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     constructor(
+        address withdrawAddress,
         string memory baseURI,
-        string memory name,
-        string memory symbol,
-        string memory unrevealedURI,
+        string memory prerevealURI,
         uint256 maxSupply,
         uint256 mintCost,
         address vrfCoordinatorV2,
         uint64 vrfSubscriptionId,
         bytes32 vrfGasLane,
         uint32 vrfCallbackGasLimit
-    ) ERC721(name, symbol) VRFConsumerBaseV2(vrfCoordinatorV2) {
-        _setBaseURI(baseURI);
-        _unrevealedURI = unrevealedURI;
+    ) ERC721("PlayPopGo", "PPG") VRFConsumerBaseV2(vrfCoordinatorV2) {
+        _withdrawAddress = withdrawAddress;
+        _uri = baseURI;
+        _prerevealURI = prerevealURI;
+        _saleStatus = SaleStatus.PAUSED;
         MAX_SUPPLY = maxSupply;
         MINT_COST = mintCost;
         VRF_COORDINATOR_V2 = VRFCoordinatorV2Interface(vrfCoordinatorV2);
@@ -100,9 +122,17 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function withdrawProceeds() external onlyOwner {
-        (bool sent, ) = payable(owner()).call{value: address(this).balance}("");
-        if (!sent) revert WithdrawProceedsFailed();
+    function setBaseURI(string memory baseURI) external onlyOwner {
+        _uri = baseURI;
+    }
+
+    function setPreRevealURI(string memory prerevealURI) external onlyOwner {
+        _prerevealURI = prerevealURI;
+    }
+
+    function setSaleStatus(SaleStatus status) external onlyOwner {
+        if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
+        _saleStatus = status;
     }
 
     function setDreamBoxRoot(bytes32 root) external onlyOwner {
@@ -110,29 +140,57 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         emit RootUpdated(root);
     }
 
-    function setBaseURI(string memory baseURI) external onlyOwner {
-        _setBaseURI(baseURI);
+    function withdrawFunds() external onlyOwner {
+        payable(_withdrawAddress).transfer(address(this).balance);
     }
 
-    function privateMint(bytes32[] calldata proof) external {
-        address receiver = msg.sender;
+    function startReveal() external onlyOwner returns (uint256 requestId) {
+        // Function is only callable once
+        if (_revealed) revert AlreadyRevealed();
+
+        requestId = VRF_COORDINATOR_V2.requestRandomWords(
+            VRF_GAS_LANE,
+            VRF_SUBSCRIPTION_ID,
+            VRF_REQUEST_CONFIRMATIONS,
+            VRF_CALLBACK_GA_LIMIT,
+            VRF_NUM_WORDS
+        );
+        _revealed = true;
+        emit Revealed(requestId);
+    }
+
+    function dreamboxMint(bytes32[] calldata proof) external callerIsReceiver {
         uint256 tokenId = _mintCount + 1;
+        address receiver = msg.sender;
+
+        if (_saleStatus != SaleStatus.OPEN && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
+        if (_addressMintCount[receiver] > MAX_MINT_PER_ADDRESS)
+            revert MaxMintPerAddressSurpassed(_addressMintCount[receiver], MAX_MINT_PER_ADDRESS);
+        if (tokenId > MAX_SUPPLY) revert MaxSupplyReached();
 
         if (!_verify(_leaf(receiver), proof)) revert InvalidMerkleProof(receiver, proof);
 
-        if (tokenId > MAX_SUPPLY) revert MaxSupplyReached();
-        _mint(receiver, tokenId);
         ++_mintCount;
+        ++_addressMintCount[receiver];
+        _mint(receiver, tokenId);
     }
 
-    function publicMint(uint256 amount) external payable {
+    function publicMint(uint256 amount) external payable callerIsReceiver {
+        if (_saleStatus != SaleStatus.OPEN) revert SaleIsNotOpen();
         if (amount == 0) revert InvalidAmount();
         if (_mintCount + amount > MAX_SUPPLY) revert MaxSupplyReached();
-        if (amount > MAX_MINT_PER_ADDRESS) revert MaxMintPerAddressSurpassed(amount, MAX_MINT_PER_ADDRESS);
         if (msg.value < MINT_COST * amount) revert InsufficientFunds();
 
-        for (uint256 i = 1; i <= amount; i++) _mint(msg.sender, _mintCount + i);
-        ++_mintCount;
+        uint256 addressMintCount = _addressMintCount[msg.sender];
+
+        for (uint256 i = 1; i <= amount; i++) {
+            if (addressMintCount >= MAX_MINT_PER_ADDRESS)
+                revert MaxMintPerAddressSurpassed(addressMintCount, MAX_MINT_PER_ADDRESS);
+            ++_mintCount;
+            ++addressMintCount;
+            _mint(msg.sender, _mintCount);
+        }
+        _addressMintCount[msg.sender] = addressMintCount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,45 +201,19 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (!_exists(tokenId)) revert NonExistentToken();
 
         // If metadata is unrevealed, return the unrevealed URI
-        if (!_offsetFulfilled) return _unrevealedURI;
+        if (!_revealed) return _prerevealURI;
 
-        uint256 formattedID = (tokenId + _offset) % MAX_SUPPLY;
-        string memory base = _baseURI();
-        string memory uriID = LibString.toString(formattedID);
-        string memory json = ".json";
-        return string(abi.encodePacked(base, uriID, json));
+        string memory id = LibString.toString(((tokenId + _offset) % MAX_SUPPLY));
+        return string(abi.encodePacked(_uri, id));
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function requestRandomOffset() public onlyOwner returns (uint256 requestId) {
-        // Function is only callable once
-        if (_offsetRequested) revert OffsetAlreadyRequested();
-
-        requestId = VRF_COORDINATOR_V2.requestRandomWords(
-            VRF_GAS_LANE,
-            VRF_SUBSCRIPTION_ID,
-            VRF_REQUEST_CONFIRMATIONS,
-            VRF_CALLBACK_GA_LIMIT,
-            VRF_NUM_WORDS
-        );
-        _offsetRequested = true;
-        emit OffsetRequested(requestId);
-    }
-
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    function _baseURI() internal view override returns (string memory) {
-        return _uri;
-    }
-
-    function _setBaseURI(string memory baseURI) internal {
-        _uri = baseURI;
-    }
 
     function _leaf(address receiver) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(receiver));
@@ -193,7 +225,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
 
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
         _offset = randomWords[0] % MAX_SUPPLY;
-        _offsetFulfilled = true;
+        _revealed = true;
         emit OffsetRequestFulfilled(_offset);
     }
 }
