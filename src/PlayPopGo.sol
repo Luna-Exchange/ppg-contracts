@@ -8,12 +8,14 @@ import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "solmate/utils/MerkleProofLib.sol";
 import "solmate/utils/LibString.sol";
 
+/// @title PlayPopGo NFT Contract
+/// @author Clique
 contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     enum SaleStatus {
-        PAUSED,
-        DREAMBOX,
-        OPEN,
-        CLOSED
+        PAUSED, // No one can mint
+        DREAMBOX, // Only dreambox holders can mint
+        OPEN, // Anyone can mint
+        CLOSED // No one can mint and certain functinos are disabled
     }
 
     using LibString for uint256;
@@ -47,16 +49,15 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     SaleStatus public _saleStatus;
 
     uint256 public _maxSupply;
+    uint256 public _mintCount;
+    address public _withdrawAddress;
+    bytes32 public _dreamBoxRoot;
 
     // REVEAL
     uint256 public _offset;
     bool public _revealed;
     string public _uri;
     string public _preRevealURI;
-
-    uint256 public _mintCount;
-    address public _withdrawAddress;
-    bytes32 public _dreamBoxRoot;
 
     mapping(address => uint256) _addressMintCount;
     mapping(address => uint256) _dreamboxMintCount;
@@ -78,7 +79,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     error InvalidAmount();
     error MaxSupplyReached();
     error InsufficientFunds();
-    error WithdrawProceedsFailed();
     error NonExistentToken();
     error AlreadyRevealed();
     error DreamboxMintUsed();
@@ -89,6 +89,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                               MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
+    // Modifier checks that the caller is not a smart contract
     modifier callerIsReceiver() {
         require(tx.origin == msg.sender, "The caller is another contract");
         _;
@@ -125,33 +126,54 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Sets the contract's baseURI
+    /// @dev Only callable by the contract owner
+    /// @param baseURI The new baseURI
     function setBaseURI(string memory baseURI) external onlyOwner {
         _uri = baseURI;
     }
 
+    /// @notice Sets the contract's maximum supply
+    /// @dev Only callable by the contract owner
+    /// @dev Reverts if the sale is closed
+    /// @param supply The new maximum supply
     function setMaxSupply(uint256 supply) external onlyOwner {
         if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
         _maxSupply = supply;
     }
 
+    /// @notice Sets the contract's pre-reveal URI
+    /// @dev Only callable by the contract owner
+    /// @param preRevealURI The new pre-reveal URI
     function setPreRevealURI(string memory preRevealURI) external onlyOwner {
         _preRevealURI = preRevealURI;
     }
 
+    /// @notice Sets the contract's sale status
+    /// @dev Only callable by the contract owner
+    /// @dev Reverts if the sale is closed
+    /// @param status The new sale status
     function setSaleStatus(SaleStatus status) external onlyOwner {
         if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
         _saleStatus = status;
     }
 
+    /// @notice Sets the contract's dreambox root for dreambox minting
+    /// @dev Only callable by the contract owner
+    /// @param dreamBoxRoot The new dreambox root
     function setDreamboxRoot(bytes32 dreamBoxRoot) external onlyOwner {
         _dreamBoxRoot = dreamBoxRoot;
         emit DreamboxRootUpdated(dreamBoxRoot);
     }
 
+    /// @notice Withdraws the contract's funds
+    /// @dev Only callable by the contract owner
     function withdrawFunds() external onlyOwner {
         payable(_withdrawAddress).transfer(address(this).balance);
     }
 
+    /// @notice Initializes the contract's reveal process
+    /// @dev Only callable by the contract owner
     function startReveal() external onlyOwner returns (uint256 requestId) {
         // Function is only callable once
         if (_revealed) revert AlreadyRevealed();
@@ -167,6 +189,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         emit Revealed(requestId);
     }
 
+    /// @notice Mints a token for the caller
+    /// @param amount The amount of tokens to mint
     function publicMint(uint256 amount) external payable callerIsReceiver {
         if (_saleStatus != SaleStatus.OPEN) revert SaleIsNotOpen();
         if (amount == 0) revert InvalidAmount();
@@ -185,6 +209,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         _addressMintCount[msg.sender] = addressMintCount;
     }
 
+    /// @notice Mints a token for a caller who holds a deambox
+    /// @param proof The merkle proof for the caller's address
     function dreamboxMint(bytes32[] calldata proof) external callerIsReceiver {
         uint256 tokenId = _mintCount + 1;
         address receiver = msg.sender;
@@ -205,6 +231,9 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Returns a token's URI
+    /// @notice If the metadata is unrevealed, returns the pre-reveal URI
+    /// @param tokenId The token's ID
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (!_exists(tokenId)) revert NonExistentToken();
 
@@ -223,14 +252,19 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Consturcts a leaf from a given address
     function _leaf(address receiver) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(receiver));
     }
 
+    /// @notice Verifies a merkle proof
+    /// @param leaf The leaf to verify
+    /// @param proof The merkle proof
     function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
         return MerkleProofLib.verify(proof, _dreamBoxRoot, leaf);
     }
 
+    /// @notice Fulfills a random number request
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {
         _offset = randomWords[0] % _maxSupply;
         _revealed = true;
