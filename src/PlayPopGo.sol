@@ -69,6 +69,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     event Revealed(uint256 requestId);
     event OffsetRequestFulfilled(uint256 offset);
     event DreamboxRootUpdated(bytes32 dreamBoxRoot);
+    event MaxSupplyUpdated(uint256 newMaxSupply);
+    event SaleStatusUpdated(SaleStatus newSaleStatus);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -133,20 +135,21 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         _uri = baseURI;
     }
 
-    /// @notice Sets the contract's maximum supply
-    /// @dev Only callable by the contract owner
-    /// @dev Reverts if the sale is closed
-    /// @param supply The new maximum supply
-    function setMaxSupply(uint256 supply) external onlyOwner {
-        if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
-        _maxSupply = supply;
-    }
-
     /// @notice Sets the contract's pre-reveal URI
     /// @dev Only callable by the contract owner
     /// @param preRevealURI The new pre-reveal URI
     function setPreRevealURI(string memory preRevealURI) external onlyOwner {
         _preRevealURI = preRevealURI;
+    }
+
+    /// @notice Sets the contract's maximum supply
+    /// @dev Only callable by the contract owner
+    /// @dev Reverts if the sale is closed
+    /// @param maxSupply The new maximum supply
+    function setMaxSupply(uint256 maxSupply) external onlyOwner {
+        if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
+        _maxSupply = maxSupply;
+        emit MaxSupplyUpdated(maxSupply);
     }
 
     /// @notice Sets the contract's sale status
@@ -156,6 +159,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     function setSaleStatus(SaleStatus status) external onlyOwner {
         if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
         _saleStatus = status;
+        emit SaleStatusUpdated(status);
     }
 
     /// @notice Sets the contract's dreambox root for dreambox minting
@@ -199,10 +203,10 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (_addressMintCount[msg.sender] + amount > MAX_MINT_PER_ADDRESS)
             revert MaxMintPerAddressSurpassed(_addressMintCount[msg.sender], MAX_MINT_PER_ADDRESS);
 
+        _addressMintCount[msg.sender] += amount; // Update address mint count
+
         for (uint256 i = 1; i <= amount; i++) {
             ++_mintCount; // Update total mint count
-            ++_addressMintCount[msg.sender]; // Update address mint count
-
             _mint(msg.sender, _mintCount); // Mint token
         }
     }
