@@ -60,7 +60,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     string public _preRevealURI;
 
     mapping(address => uint256) _addressMintCount;
-    mapping(address => uint256) _dreamboxMintCount;
+    mapping(address => bool) _dreamboxMinted;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -196,17 +196,15 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (amount == 0) revert InvalidAmount();
         if (_mintCount + amount > _maxSupply) revert MaxSupplyReached();
         if (msg.value < MINT_COST * amount) revert InsufficientFunds();
-
-        uint256 addressMintCount = _addressMintCount[msg.sender];
+        if (_addressMintCount[msg.sender] + amount > MAX_MINT_PER_ADDRESS)
+            revert MaxMintPerAddressSurpassed(_addressMintCount[msg.sender], MAX_MINT_PER_ADDRESS);
 
         for (uint256 i = 1; i <= amount; i++) {
-            if (addressMintCount >= MAX_MINT_PER_ADDRESS)
-                revert MaxMintPerAddressSurpassed(addressMintCount, MAX_MINT_PER_ADDRESS);
-            ++_mintCount;
-            ++addressMintCount;
-            _mint(msg.sender, _mintCount);
+            ++_mintCount; // Update total mint count
+            ++_addressMintCount[msg.sender]; // Update address mint count
+
+            _mint(msg.sender, _mintCount); // Mint token
         }
-        _addressMintCount[msg.sender] = addressMintCount;
     }
 
     /// @notice Mints a token for a caller who holds a deambox
@@ -216,12 +214,12 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         address receiver = msg.sender;
 
         if (_saleStatus != SaleStatus.OPEN && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
-        if (_dreamboxMintCount[receiver] != 0) revert DreamboxMintUsed();
+        if (_dreamboxMinted[receiver] == true) revert DreamboxMintUsed();
         if (tokenId > _maxSupply) revert MaxSupplyReached();
 
         if (!_verify(_leaf(receiver), proof)) revert InvalidMerkleProof(receiver, proof);
 
-        ++_dreamboxMintCount[receiver];
+        _dreamboxMinted[receiver] = true;
         ++_mintCount;
         ++_addressMintCount[receiver];
         _mint(receiver, tokenId);
