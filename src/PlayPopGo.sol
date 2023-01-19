@@ -23,8 +23,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                              CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant MAX_MINT_PER_ADDRESS = 2;
-
     // CHAINLINK VRF
     uint16 private constant VRF_REQUEST_CONFIRMATIONS = 3;
     uint32 private constant VRF_NUM_WORDS = 1;
