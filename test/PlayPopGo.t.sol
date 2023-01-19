@@ -88,21 +88,38 @@ contract PlayPopGoTest is Test {
         playPopGo.setBaseURI(_newBaseURI);
     }
 
-    function setMaxSupply(uint256 _maxSupply) public {
-        vm.prank(owner);
+    function test_setMaxSupply(uint256 _maxSupply) public {
+        vm.startPrank(owner);
         playPopGo.setMaxSupply(_maxSupply);
         assertEq(playPopGo._maxSupply(), _maxSupply);
+
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
+        vm.expectRevert(PlayPopGo.SaleIsClosed.selector);
+        playPopGo.setMaxSupply(_maxSupply);
+        vm.stopPrank();
 
         vm.prank(minter1);
         vm.expectRevert("Ownable: caller is not the owner");
         playPopGo.setMaxSupply(_maxSupply);
-
-        vm.prank(owner);
-        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
-        vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
     }
 
-    function setPreRevealURI(string memory _preRevealURI) public {
+    function test_setSaleStatus() public {
+        vm.startPrank(owner);
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
+        uint256 closedSale = uint256(PlayPopGo.SaleStatus.CLOSED);
+        uint256 saleStatus = uint256(playPopGo._saleStatus());
+        assertEq(saleStatus, closedSale);
+
+        vm.expectRevert(PlayPopGo.SaleIsClosed.selector);
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
+        vm.stopPrank();
+
+        vm.prank(minter1);
+        vm.expectRevert("Ownable: caller is not the owner");
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
+    }
+
+    function test_setPreRevealURI(string memory _preRevealURI) public {
         vm.prank(owner);
         playPopGo.setPreRevealURI(_preRevealURI);
         assertEq(playPopGo._preRevealURI(), _preRevealURI);
@@ -112,26 +129,17 @@ contract PlayPopGoTest is Test {
         playPopGo.setPreRevealURI(_preRevealURI);
     }
 
-    function setSaleStatus() public {
-        vm.startPrank(owner);
-        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
-        vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        vm.stopPrank();
-
-        vm.prank(minter1);
-        vm.expectRevert("Ownable: caller is not the owner");
-        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
-    }
-
-    function setDreamboxRoot(bytes32 _dreamBoxRoot) public {
+    function test_setDreamboxRoot(bytes32 _dreamBoxRoot) public {
         vm.startPrank(owner);
         playPopGo.setDreamboxRoot(_dreamBoxRoot);
         assertEq(playPopGo._dreamBoxRoot(), _dreamBoxRoot);
 
         vm.expectEmit(true, true, true, true);
-        emit DreamboxRootUpdated("hello");
-        playPopGo.setDreamboxRoot("bye");
-        // TODO: Check the implementatino of this
+        emit DreamboxRootUpdated(_dreamBoxRoot);
+
+        playPopGo.setDreamboxRoot(_dreamBoxRoot);
+        assertEq(playPopGo._dreamBoxRoot(), _dreamBoxRoot);
+        vm.stopPrank();
 
         vm.prank(minter1);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -144,11 +152,11 @@ contract PlayPopGoTest is Test {
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
 
         vm.prank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         vm.prank(owner);
         playPopGo.withdrawFunds();
-        assertEq(withdrawAddress.balance, 0.2 ether);
+        assertEq(withdrawAddress.balance, 0.1 ether);
 
         vm.prank(minter1);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -164,7 +172,7 @@ contract PlayPopGoTest is Test {
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
 
         vm.prank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         vm.prank(owner);
         playPopGo.startReveal();
@@ -187,8 +195,8 @@ contract PlayPopGoTest is Test {
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
         vm.prank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
-        assertEq(playPopGo.balanceOf(minter1), 2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
+        assertEq(playPopGo.balanceOf(minter1), 1);
     }
 
     function test_publicMintSaleIsNotOpen() public {
@@ -196,19 +204,19 @@ contract PlayPopGoTest is Test {
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.PAUSED);
         vm.prank(minter1, address(minter1));
         vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
         vm.prank(minter2, address(minter2));
         vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
         vm.prank(minter2, address(minter2));
         vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
     }
 
     function test_publicMintInvalidAmount() public {
@@ -235,13 +243,13 @@ contract PlayPopGoTest is Test {
         playPopGo.publicMint(1);
     }
 
-    function test_publicMintMaxMintPerAddressSurpassed() public {
+    function test_publicMintAlreadyMinted() public {
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
         vm.startPrank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
-        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.MaxMintPerAddressSurpassed.selector, 2, 2));
-        playPopGo.publicMint{value: 90 ether}(99);
+        playPopGo.publicMint{value: 0.1 ether}(1);
+        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.AlreadyMinted.selector));
+        playPopGo.publicMint{value: 0.1 ether}(1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -292,7 +300,7 @@ contract PlayPopGoTest is Test {
         playPopGo.dreamboxMint(proof1);
         assertEq(playPopGo.balanceOf(minter1), 1);
 
-        vm.expectRevert(PlayPopGo.DreamboxMintUsed.selector);
+        vm.expectRevert(PlayPopGo.AlreadyMinted.selector);
         playPopGo.dreamboxMint(proof1);
     }
 
@@ -336,14 +344,15 @@ contract PlayPopGoTest is Test {
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
 
-        vm.startPrank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        vm.prank(minter1, address(minter1));
+        playPopGo.publicMint{value: 0.1 ether}(1);
+        vm.prank(minter2, address(minter2));
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         string memory tokenURI1 = playPopGo.tokenURI(1);
         string memory tokenURI2 = playPopGo.tokenURI(2);
         assertEq(tokenURI1, unrevealedURI);
         assertEq(tokenURI2, unrevealedURI);
-        vm.stopPrank();
     }
 
     function test_tokenURIRevealed() public {
@@ -358,7 +367,9 @@ contract PlayPopGoTest is Test {
         vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
 
         vm.prank(minter1, address(minter1));
-        playPopGo.publicMint{value: 0.2 ether}(2);
+        playPopGo.publicMint{value: 0.1 ether}(1);
+        vm.prank(minter2, address(minter2));
+        playPopGo.publicMint{value: 0.1 ether}(1);
 
         string memory tokenURI1 = playPopGo.tokenURI(1);
         assertEq(tokenURI1, "https://baseURI/9999");
