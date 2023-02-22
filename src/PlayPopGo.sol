@@ -14,7 +14,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     enum SaleStatus {
         PAUSED, // No one can mint
         DREAMBOX, // Only dreambox holders can mint
-        OPEN, // Anyone can mint
+        PUBLIC, // Anyone can mint
         CLOSED // No one can mint and certain functinos are disabled
     }
 
@@ -49,15 +49,14 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     uint256 public _maxSupply;
     uint256 public _totalMinted;
     address public _withdrawAddress;
-    bytes32 public _dreamBoxRoot;
 
     // REVEAL
     uint256 public _offset;
     bool public _revealed;
-    string public _uri;
+    string public _postRevealURI;
     string public _preRevealURI;
 
-    mapping(address => bool) _minted;
+    mapping(address => bool) _minters;
 
     /*//////////////////////////////////////////////////////////////
                                EVENTS
@@ -65,7 +64,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
 
     event Revealed(uint256 requestId);
     event OffsetRequestFulfilled(uint256 offset);
-    event DreamboxRootUpdated(bytes32 dreamBoxRoot);
     event MaxSupplyUpdated(uint256 newMaxSupply);
     event SaleStatusUpdated(SaleStatus newSaleStatus);
     event DreamboxContractSet(address DreamBoxAddress);
@@ -102,8 +100,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     constructor(
         address dreambox,
         address withdrawAddress,
-        string memory baseURI,
         string memory preRevealURI,
+        string memory postRevealURI,
         uint256 maxSupply,
         uint256 mintCost,
         address vrfCoordinatorV2,
@@ -113,8 +111,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     ) ERC721("PlayPopGo", "PPG") VRFConsumerBaseV2(vrfCoordinatorV2) {
         _dreambox = Dreambox(dreambox);
         _withdrawAddress = withdrawAddress;
-        _uri = baseURI;
         _preRevealURI = preRevealURI;
+        _postRevealURI = postRevealURI;
         _saleStatus = SaleStatus.PAUSED;
         _maxSupply = maxSupply;
         MINT_COST = mintCost;
@@ -128,11 +126,11 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the contract's baseURI
+    /// @notice Sets the contract's postRevealURI
     /// @dev Only callable by the contract owner
-    /// @param baseURI The new baseURI
-    function setBaseURI(string memory baseURI) external onlyOwner {
-        _uri = baseURI;
+    /// @param postRevealURI The new postRevealURI
+    function setPostRevealURI(string memory postRevealURI) external onlyOwner {
+        _postRevealURI = postRevealURI;
     }
 
     /// @notice Sets the contract's pre-reveal URI
@@ -152,6 +150,9 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         emit MaxSupplyUpdated(maxSupply);
     }
 
+    /// @notice Sets the dreambox contract address.
+    /// @dev Only callable by the contract owner
+    /// @param dreamboxAddress The new dreambox contract address
     function setDreambox(address dreamboxAddress) external onlyOwner {
         _dreambox = Dreambox(dreamboxAddress);
         emit DreamboxContractSet(dreamboxAddress);
@@ -191,34 +192,29 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     }
 
     /// @notice Mints a token for the caller
-    /// @param amount The amount of tokens to mint
-    function publicMint(uint256 amount) external payable callerIsReceiver {
-        if (_saleStatus != SaleStatus.OPEN) revert SaleIsNotOpen();
-        if (amount == 0) revert InvalidAmount();
-        if (_totalMinted + amount > _maxSupply) revert MaxSupplyReached();
-        if (msg.value < MINT_COST * amount) revert InsufficientFunds();
-        if (_minted[msg.sender] == true) revert AlreadyMinted();
+    function publicMint() external payable callerIsReceiver {
+        if (_saleStatus != SaleStatus.PUBLIC) revert SaleIsNotOpen();
+        if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
+        if (_minters[msg.sender] == true) revert AlreadyMinted();
+        if (msg.value < MINT_COST) revert InsufficientFunds();
 
-        _minted[msg.sender] = true;
+        _minters[msg.sender] = true;
         ++_totalMinted; // Update total mint count
         _mint(msg.sender, _totalMinted); // Mint token
     }
 
     /// @notice Mints a token for a caller who holds a deambox
     function dreamboxMint() external callerIsReceiver {
-        uint256 tokenId = _totalMinted + 1;
-        address receiver = msg.sender;
-
-        if (_saleStatus != SaleStatus.OPEN && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
-        if (_minted[receiver] == true) revert AlreadyMinted();
-        if (tokenId > _maxSupply) revert MaxSupplyReached();
+        if (_saleStatus != SaleStatus.PUBLIC && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
+        if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
+        if (_minters[msg.sender] == true) revert AlreadyMinted();
 
         if (address(_dreambox) == address(0)) revert DreamboxNotSet();
-        if (_dreambox.balanceOf(receiver, 1) == 0) revert NotDreamboxHolder();
+        if (_dreambox.balanceOf(msg.sender, 1) == 0) revert NotDreamboxHolder();
 
-        _minted[receiver] = true;
+        _minters[msg.sender] = true;
         ++_totalMinted;
-        _mint(receiver, tokenId);
+        _mint(msg.sender, _totalMinted);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -235,7 +231,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (!_revealed) return _preRevealURI;
 
         string memory id = LibString.toString(((tokenId + _offset) % _maxSupply));
-        return string(abi.encodePacked(_uri, id));
+        return string.concat(_postRevealURI, id);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
