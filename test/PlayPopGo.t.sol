@@ -7,8 +7,10 @@ import {MerkleProofLib} from "solmate/utils/MerkleProofLib.sol";
 import {MerkleTree} from "./utils/MerkleTree/MerkleTree.sol";
 import {VRFCoordinatorV2Mock} from "./utils/mocks/VRFCoordinatorV2Mock.sol";
 import {LinkTokenMock} from "./utils/mocks/LinkTokenMock.sol";
+import {DreamboxMock} from "../test/utils/mocks/DreamboxMock.sol";
 
 contract PlayPopGoTest is Test {
+    DreamboxMock dreambox;
     PlayPopGo playPopGo;
     VRFCoordinatorV2Mock vrfCoordinator;
     LinkTokenMock linkToken;
@@ -16,6 +18,7 @@ contract PlayPopGoTest is Test {
     address owner;
     address minter1;
     address minter2;
+    address minter3;
     address withdrawAddress;
 
     // ---------- CONSTRUCTOR ARGS ----------
@@ -39,10 +42,12 @@ contract PlayPopGoTest is Test {
     event DreamboxRootUpdated(bytes32 dreamBoxRoot);
 
     function setUp() public {
+        dreambox = new DreamboxMock("uri");
         withdrawAddress = makeAddr("withdrawAddress");
         owner = makeAddr("owner");
         minter1 = makeAddr("minter1");
         minter2 = makeAddr("minter2");
+        minter3 = makeAddr("minter3");
         vm.deal(owner, 100 ether);
         vm.deal(minter1, 100 ether);
         vm.deal(minter2, 100 ether);
@@ -51,6 +56,7 @@ contract PlayPopGoTest is Test {
         linkToken = new LinkTokenMock();
         vrfCoordinator = new VRFCoordinatorV2Mock(10 * 3, 10 * 3);
         playPopGo = new PlayPopGo(
+            address(dreambox),
             withdrawAddress,
             baseURI,
             unrevealedURI,
@@ -62,15 +68,7 @@ contract PlayPopGoTest is Test {
             vrfCallbackGasLimit
         );
 
-        // Merkle-Tree
-        mt = new MerkleTree(false, false, false);
-        bytes32 hashedminter1 = keccak256(abi.encodePacked(minter1));
-        bytes32 hashedminter2 = keccak256(abi.encodePacked(minter2));
-        mt.addLeaf(hashedminter1, false);
-        mt.addLeaf(hashedminter2, false);
-        root = mt.getRoot();
-        proof1 = mt.getProof(hashedminter1);
-        proof2 = mt.getProof(hashedminter2);
+        dreambox.mint(minter1, minter2);
         vm.stopPrank();
     }
 
@@ -127,23 +125,6 @@ contract PlayPopGoTest is Test {
         vm.prank(minter1);
         vm.expectRevert("Ownable: caller is not the owner");
         playPopGo.setPreRevealURI(_preRevealURI);
-    }
-
-    function test_setDreamboxRoot(bytes32 _dreamBoxRoot) public {
-        vm.startPrank(owner);
-        playPopGo.setDreamboxRoot(_dreamBoxRoot);
-        assertEq(playPopGo._dreamBoxRoot(), _dreamBoxRoot);
-
-        vm.expectEmit(true, true, true, true);
-        emit DreamboxRootUpdated(_dreamBoxRoot);
-
-        playPopGo.setDreamboxRoot(_dreamBoxRoot);
-        assertEq(playPopGo._dreamBoxRoot(), _dreamBoxRoot);
-        vm.stopPrank();
-
-        vm.prank(minter1);
-        vm.expectRevert("Ownable: caller is not the owner");
-        playPopGo.setDreamboxRoot(_dreamBoxRoot);
     }
 
     function test_withdrawFunds() public {
@@ -259,18 +240,17 @@ contract PlayPopGoTest is Test {
     function test_dreamboxMint() public {
         vm.startPrank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
-        playPopGo.setDreamboxRoot(root);
         vm.stopPrank();
 
         vm.prank(minter1, address(minter1));
-        playPopGo.dreamboxMint(proof1);
+        playPopGo.dreamboxMint();
         assertEq(playPopGo.balanceOf(minter1), 1);
 
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.OPEN);
 
         vm.prank(minter2, address(minter2));
-        playPopGo.dreamboxMint(proof2);
+        playPopGo.dreamboxMint();
         assertEq(playPopGo.balanceOf(minter2), 1);
     }
 
@@ -280,54 +260,62 @@ contract PlayPopGoTest is Test {
 
         vm.prank(minter1, address(minter1));
         vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        playPopGo.dreamboxMint(proof1);
+        playPopGo.dreamboxMint();
 
         vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
 
         vm.prank(minter2, address(minter2));
         vm.expectRevert(PlayPopGo.SaleIsNotOpen.selector);
-        playPopGo.dreamboxMint(proof2);
+        playPopGo.dreamboxMint();
     }
 
     function test_dreamboxMintDreamboxMintUsed() public {
         vm.startPrank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
-        playPopGo.setDreamboxRoot(root);
         vm.stopPrank();
 
         vm.startPrank(minter1, address(minter1));
-        playPopGo.dreamboxMint(proof1);
+        playPopGo.dreamboxMint();
         assertEq(playPopGo.balanceOf(minter1), 1);
 
         vm.expectRevert(PlayPopGo.AlreadyMinted.selector);
-        playPopGo.dreamboxMint(proof1);
+        playPopGo.dreamboxMint();
     }
 
     function test_dreamboxMintMaxSupplyReached() public {
         vm.startPrank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
         playPopGo.setMaxSupply(1);
-        playPopGo.setDreamboxRoot(root);
         vm.stopPrank();
 
         vm.prank(minter1, address(minter1));
-        playPopGo.dreamboxMint(proof1);
+        playPopGo.dreamboxMint();
 
         vm.prank(minter2, address(minter2));
         vm.expectRevert(PlayPopGo.MaxSupplyReached.selector);
-        playPopGo.dreamboxMint(proof2);
+        playPopGo.dreamboxMint();
     }
 
-    function test_dreamboxMintInvalidMerkleProof() public {
+    function test_dreamboxMintDreamboxNotSet() public {
         vm.startPrank(owner);
+        playPopGo.setDreambox(address(0));
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
-        playPopGo.setDreamboxRoot(root);
         vm.stopPrank();
 
         vm.prank(minter1, address(minter1));
-        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.InvalidMerkleProof.selector, minter1, proof2));
-        playPopGo.dreamboxMint(proof2);
+        vm.expectRevert(PlayPopGo.DreamboxNotSet.selector);
+        playPopGo.dreamboxMint();
+    }
+
+    function test_dreamboxMintNotDreamboxHolder() public {
+        vm.startPrank(owner);
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.DREAMBOX);
+        vm.stopPrank();
+
+        vm.prank(minter3, address(minter3));
+        vm.expectRevert(abi.encodeWithSelector(PlayPopGo.NotDreamboxHolder.selector));
+        playPopGo.dreamboxMint();
     }
 
     // /*//////////////////////////////////////////////////////////////

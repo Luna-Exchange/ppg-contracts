@@ -5,8 +5,8 @@ import "openzeppelin/access/Ownable.sol";
 import "openzeppelin/token/ERC721/ERC721.sol";
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "solmate/utils/MerkleProofLib.sol";
 import "solmate/utils/LibString.sol";
+import {Dreambox} from "./Dreambox.sol";
 
 /// @title PlayPopGo NFT Contract
 /// @author Clique
@@ -43,11 +43,11 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     /*//////////////////////////////////////////////////////////////
                             MUTABLE STORAGE
     //////////////////////////////////////////////////////////////*/
-
+    Dreambox public _dreambox;
     SaleStatus public _saleStatus;
 
     uint256 public _maxSupply;
-    uint256 public _mintCount;
+    uint256 public _totalMinted;
     address public _withdrawAddress;
     bytes32 public _dreamBoxRoot;
 
@@ -68,6 +68,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     event DreamboxRootUpdated(bytes32 dreamBoxRoot);
     event MaxSupplyUpdated(uint256 newMaxSupply);
     event SaleStatusUpdated(SaleStatus newSaleStatus);
+    event DreamboxContractSet(address DreamBoxAddress);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
@@ -81,7 +82,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     error NonExistentToken();
     error AlreadyRevealed();
     error AlreadyMinted();
-    error InvalidMerkleProof(address receiver, bytes32[] proof);
+    error NotDreamboxHolder();
+    error DreamboxNotSet();
 
     /*//////////////////////////////////////////////////////////////
                               MODIFIERS
@@ -98,6 +100,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     //////////////////////////////////////////////////////////////*/
 
     constructor(
+        address dreambox,
         address withdrawAddress,
         string memory baseURI,
         string memory preRevealURI,
@@ -108,6 +111,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         bytes32 vrfGasLane,
         uint32 vrfCallbackGasLimit
     ) ERC721("PlayPopGo", "PPG") VRFConsumerBaseV2(vrfCoordinatorV2) {
+        _dreambox = Dreambox(dreambox);
         _withdrawAddress = withdrawAddress;
         _uri = baseURI;
         _preRevealURI = preRevealURI;
@@ -148,6 +152,11 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         emit MaxSupplyUpdated(maxSupply);
     }
 
+    function setDreambox(address dreamboxAddress) external onlyOwner {
+        _dreambox = Dreambox(dreamboxAddress);
+        emit DreamboxContractSet(dreamboxAddress);
+    }
+
     /// @notice Sets the contract's sale status
     /// @dev Only callable by the contract owner
     /// @dev Reverts if the sale is closed
@@ -156,14 +165,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (_saleStatus == SaleStatus.CLOSED) revert SaleIsClosed();
         _saleStatus = status;
         emit SaleStatusUpdated(status);
-    }
-
-    /// @notice Sets the contract's dreambox root for dreambox minting
-    /// @dev Only callable by the contract owner
-    /// @param dreamBoxRoot The new dreambox root
-    function setDreamboxRoot(bytes32 dreamBoxRoot) external onlyOwner {
-        _dreamBoxRoot = dreamBoxRoot;
-        emit DreamboxRootUpdated(dreamBoxRoot);
     }
 
     /// @notice Withdraws the contract's funds
@@ -194,29 +195,29 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     function publicMint(uint256 amount) external payable callerIsReceiver {
         if (_saleStatus != SaleStatus.OPEN) revert SaleIsNotOpen();
         if (amount == 0) revert InvalidAmount();
-        if (_mintCount + amount > _maxSupply) revert MaxSupplyReached();
+        if (_totalMinted + amount > _maxSupply) revert MaxSupplyReached();
         if (msg.value < MINT_COST * amount) revert InsufficientFunds();
         if (_minted[msg.sender] == true) revert AlreadyMinted();
 
         _minted[msg.sender] = true;
-        ++_mintCount; // Update total mint count
-        _mint(msg.sender, _mintCount); // Mint token
+        ++_totalMinted; // Update total mint count
+        _mint(msg.sender, _totalMinted); // Mint token
     }
 
     /// @notice Mints a token for a caller who holds a deambox
-    /// @param proof The merkle proof for the caller's address
-    function dreamboxMint(bytes32[] calldata proof) external callerIsReceiver {
-        uint256 tokenId = _mintCount + 1;
+    function dreamboxMint() external callerIsReceiver {
+        uint256 tokenId = _totalMinted + 1;
         address receiver = msg.sender;
 
         if (_saleStatus != SaleStatus.OPEN && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
         if (_minted[receiver] == true) revert AlreadyMinted();
         if (tokenId > _maxSupply) revert MaxSupplyReached();
 
-        if (!_verify(_leaf(receiver), proof)) revert InvalidMerkleProof(receiver, proof);
+        if (address(_dreambox) == address(0)) revert DreamboxNotSet();
+        if (_dreambox.balanceOf(receiver, 1) == 0) revert NotDreamboxHolder();
 
         _minted[receiver] = true;
-        ++_mintCount;
+        ++_totalMinted;
         _mint(receiver, tokenId);
     }
 
@@ -244,18 +245,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Consturcts a leaf from a given address
-    function _leaf(address receiver) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(receiver));
-    }
-
-    /// @notice Verifies a merkle proof
-    /// @param leaf The leaf to verify
-    /// @param proof The merkle proof
-    function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
-        return MerkleProofLib.verify(proof, _dreamBoxRoot, leaf);
-    }
 
     /// @notice Fulfills a random number request
     function fulfillRandomWords(uint256, uint256[] memory randomWords) internal override {

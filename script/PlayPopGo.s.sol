@@ -9,8 +9,9 @@ contract MyScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         // -------- Constructor ARGS --------
-        address vrfCoordinator;
+        address dreambox;
         address withdrawAddress;
+        address vrfCoordinator;
         string memory baseURI = "https://baseURI/";
         string memory unrevealedURI;
         uint256 maxSupply;
@@ -22,6 +23,7 @@ contract MyScript is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         PlayPopGo PlayPopGo = new PlayPopGo(
+            dreambox,
             withdrawAddress,
             baseURI,
             unrevealedURI,
