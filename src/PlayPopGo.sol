@@ -126,18 +126,18 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the contract's postRevealURI
-    /// @dev Only callable by the contract owner
-    /// @param postRevealURI The new postRevealURI
-    function setPostRevealURI(string memory postRevealURI) external onlyOwner {
-        _postRevealURI = postRevealURI;
-    }
-
     /// @notice Sets the contract's pre-reveal URI
     /// @dev Only callable by the contract owner
     /// @param preRevealURI The new pre-reveal URI
     function setPreRevealURI(string memory preRevealURI) external onlyOwner {
         _preRevealURI = preRevealURI;
+    }
+
+    /// @notice Sets the contract's postRevealURI
+    /// @dev Only callable by the contract owner
+    /// @param postRevealURI The new postRevealURI
+    function setPostRevealURI(string memory postRevealURI) external onlyOwner {
+        _postRevealURI = postRevealURI;
     }
 
     /// @notice Sets the contract's maximum supply
@@ -199,8 +199,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (msg.value < MINT_COST) revert InsufficientFunds();
 
         _minters[msg.sender] = true;
-        ++_totalMinted; // Update total mint count
         _mint(msg.sender, _totalMinted); // Mint token
+        ++_totalMinted; // Update total mint count
     }
 
     /// @notice Mints a token for a caller who holds a deambox
@@ -213,8 +213,8 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         if (_dreambox.balanceOf(msg.sender, 1) == 0) revert NotDreamboxHolder();
 
         _minters[msg.sender] = true;
-        ++_totalMinted;
         _mint(msg.sender, _totalMinted);
+        ++_totalMinted;
     }
 
     /*//////////////////////////////////////////////////////////////

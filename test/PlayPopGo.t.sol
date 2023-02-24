@@ -180,13 +180,13 @@ contract PlayPopGoTest is Test {
         vm.prank(minter1, address(minter1));
         playPopGo.publicMint{value: 0.1 ether}();
         assertEq(playPopGo.balanceOf(minter1), 1);
-        assertEq(playPopGo.ownerOf(1), minter1);
+        assertEq(playPopGo.ownerOf(0), minter1);
         assertEq(playPopGo._totalMinted(), 1);
 
         vm.startPrank(minter2, address(minter2));
         playPopGo.publicMint{value: 1 ether}();
         assertEq(playPopGo.balanceOf(minter2), 1);
-        assertEq(playPopGo.ownerOf(2), minter2);
+        assertEq(playPopGo.ownerOf(1), minter2);
         assertEq(playPopGo._totalMinted(), 2);
     }
 
@@ -345,8 +345,8 @@ contract PlayPopGoTest is Test {
         vm.prank(minter2, address(minter2));
         playPopGo.publicMint{value: 0.1 ether}();
 
-        string memory tokenURI1 = playPopGo.tokenURI(1);
-        string memory tokenURI2 = playPopGo.tokenURI(2);
+        string memory tokenURI1 = playPopGo.tokenURI(0);
+        string memory tokenURI2 = playPopGo.tokenURI(1);
         assertEq(tokenURI1, unrevealedURI);
         assertEq(tokenURI2, unrevealedURI);
     }
@@ -359,7 +359,7 @@ contract PlayPopGoTest is Test {
         vm.stopPrank();
         // Create a uint256 array and push 100
         uint256[] memory randomWords = new uint256[](1);
-        randomWords[0] = 9998;
+        randomWords[0] = 9999;
         vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
 
         vm.prank(minter1, address(minter1));
@@ -367,9 +367,9 @@ contract PlayPopGoTest is Test {
         vm.prank(minter2, address(minter2));
         playPopGo.publicMint{value: 0.1 ether}();
 
-        string memory tokenURI1 = playPopGo.tokenURI(1);
+        string memory tokenURI1 = playPopGo.tokenURI(0);
         assertEq(tokenURI1, "https://postRevealURI/9999");
-        string memory tokenURI2 = playPopGo.tokenURI(2);
+        string memory tokenURI2 = playPopGo.tokenURI(1);
         assertEq(tokenURI2, "https://postRevealURI/0");
     }
 }
