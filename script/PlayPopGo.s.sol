@@ -14,7 +14,7 @@ contract DeployPlayPopGo is Script {
         address vrfCoordinator = 0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed;
         string memory preRevealURI = "https://prereveal/";
         string memory postRevealedURI = "https://postreveal/";
-        uint256 maxSupply = 3;
+        uint256 maxSupply = 4;
         uint256 mintCost = 0.01 ether;
         uint64 vrfSubscriptionId = 3414;
         bytes32 vrfGasLane = 0x4b09e658ed251bcafeebbc69400383d49f344ace09b9576fe248bb02c003fe9f;

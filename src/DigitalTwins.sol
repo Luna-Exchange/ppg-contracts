@@ -4,9 +4,9 @@ pragma solidity ^0.8.17;
 import "openzeppelin/token/ERC1155/ERC1155.sol";
 import "openzeppelin/access/Ownable.sol";
 
-/// @title PlayPopGo Clothes Contract
+/// @title DigitalTwins Contract
 /// @author Clique
-contract Clothes is ERC1155, Ownable {
+contract DigitalTwins is ERC1155, Ownable {
     constructor(
         string memory uri,
         address to,

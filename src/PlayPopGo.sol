@@ -15,7 +15,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         PAUSED, // No one can mint
         DREAMBOX, // Only dreambox holders can mint
         PUBLIC, // Anyone can mint
-        CLOSED // No one can mint and certain functinos are disabled
+        CLOSED // No one can mint and certain functions are disabled
     }
 
     using LibString for uint256;
