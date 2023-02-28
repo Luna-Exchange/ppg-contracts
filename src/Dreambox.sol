@@ -21,7 +21,7 @@ contract Dreambox is ERC1155, Ownable {
     bool _mintActive = false;
 
     // Counter for the number of tokens minted.
-    uint256 public _totalMinted = 1;
+    uint256 public _totalMinted;
 
     // The Merkle root of the account addresses that are allowed to mint tokens.
     bytes32 public _root;
@@ -57,7 +57,7 @@ contract Dreambox is ERC1155, Ownable {
         if (!_mintActive) revert MintIsNotActive();
         if (_minters[account]) revert AlreadyMinted();
         if (tx.origin != account) revert OnlyEOA();
-        if (_totalMinted >= 3000) revert MaxSupplyReached();
+        if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
 
         if (!_verify(_leaf(account), proof)) revert InvalidMerkleProof(account, proof);
 
