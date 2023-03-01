@@ -11,7 +11,7 @@ error AlreadyMinted();
 error OnlyEOA();
 error InvalidMerkleProof(address receiver, bytes32[] proof);
 
-/// @title PlayPopGo Dreambox Contract
+/// @title Dreambox Contract
 /// @author Clique
 contract Dreambox is ERC1155, Ownable {
     // The total supply of tokens will be capped at 3000.
