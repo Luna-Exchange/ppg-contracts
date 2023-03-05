@@ -6,7 +6,7 @@ import "openzeppelin/token/ERC721/ERC721.sol";
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "solmate/utils/LibString.sol";
-import {Dreambox} from "./Dreambox.sol";
+import "solmate/utils/MerkleProofLib.sol";
 
 /// @title PlayPopGo NFT Contract
 /// @author Clique
@@ -43,12 +43,12 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     /*//////////////////////////////////////////////////////////////
                             MUTABLE STORAGE
     //////////////////////////////////////////////////////////////*/
-    Dreambox public _dreambox;
     SaleStatus public _saleStatus;
 
     uint256 public _maxSupply;
     uint256 public _totalMinted;
     address public _withdrawAddress;
+    bytes32 public _dreamboxRoot;
 
     // REVEAL
     uint256 public _offset;
@@ -66,13 +66,13 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     event OffsetRequestFulfilled(uint256 offset);
     event MaxSupplyUpdated(uint256 newMaxSupply);
     event SaleStatusUpdated(SaleStatus newSaleStatus);
-    event DreamboxContractSet(address DreamBoxAddress);
+    event DreamboxRootUpdated(bytes32 dreamboxRoot);
 
     /*//////////////////////////////////////////////////////////////
                                ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error SaleIsNotOpen();
+    error SaleIsNotPublic();
     error SaleIsClosed();
     error InvalidAmount();
     error MaxSupplyReached();
@@ -80,8 +80,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     error NonExistentToken();
     error AlreadyRevealed();
     error AlreadyMinted();
-    error NotDreamboxHolder();
-    error DreamboxNotSet();
+    error InvalidMerkleProof(address receiver, bytes32[] proof);
 
     /*//////////////////////////////////////////////////////////////
                               MODIFIERS
@@ -98,7 +97,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     //////////////////////////////////////////////////////////////*/
 
     constructor(
-        address dreambox,
         address withdrawAddress,
         string memory preRevealURI,
         string memory postRevealURI,
@@ -109,7 +107,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         bytes32 vrfGasLane,
         uint32 vrfCallbackGasLimit
     ) ERC721("PlayPopGo", "PPG") VRFConsumerBaseV2(vrfCoordinatorV2) {
-        _dreambox = Dreambox(dreambox);
         _withdrawAddress = withdrawAddress;
         _preRevealURI = preRevealURI;
         _postRevealURI = postRevealURI;
@@ -150,12 +147,12 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         emit MaxSupplyUpdated(maxSupply);
     }
 
-    /// @notice Sets the dreambox contract address.
+    /// @notice Sets the contract's dreambox root for dreambox minting
     /// @dev Only callable by the contract owner
-    /// @param dreamboxAddress The new dreambox contract address
-    function setDreambox(address dreamboxAddress) external onlyOwner {
-        _dreambox = Dreambox(dreamboxAddress);
-        emit DreamboxContractSet(dreamboxAddress);
+    /// @param dreamboxRoot The new dreambox root
+    function setDreamboxRoot(bytes32 dreamboxRoot) external onlyOwner {
+        _dreamboxRoot = dreamboxRoot;
+        emit DreamboxRootUpdated(dreamboxRoot);
     }
 
     /// @notice Sets the contract's sale status
@@ -193,7 +190,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
 
     /// @notice Mints a token for the caller
     function publicMint() external payable callerIsReceiver {
-        if (_saleStatus != SaleStatus.PUBLIC) revert SaleIsNotOpen();
+        if (_saleStatus != SaleStatus.PUBLIC) revert SaleIsNotPublic();
         if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
         if (_minters[msg.sender] == true) revert AlreadyMinted();
         if (msg.value < MINT_COST) revert InsufficientFunds();
@@ -204,13 +201,12 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     }
 
     /// @notice Mints a token for a caller who holds a deambox
-    function dreamboxMint() external callerIsReceiver {
-        if (_saleStatus != SaleStatus.PUBLIC && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotOpen();
+    function dreamboxMint(bytes32[] calldata proof) external callerIsReceiver {
+        if (_saleStatus != SaleStatus.PUBLIC && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotPublic();
         if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
         if (_minters[msg.sender] == true) revert AlreadyMinted();
 
-        if (address(_dreambox) == address(0)) revert DreamboxNotSet();
-        if (_dreambox.balanceOf(msg.sender, 1) == 0) revert NotDreamboxHolder();
+        if (!_verify(_leaf(msg.sender), proof)) revert InvalidMerkleProof(msg.sender, proof);
 
         _minters[msg.sender] = true;
         _mint(msg.sender, _totalMinted);
@@ -247,5 +243,17 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         _offset = randomWords[0] % _maxSupply;
         _revealed = true;
         emit OffsetRequestFulfilled(_offset);
+    }
+
+    /// @notice Consturcts a leaf from a given address
+    function _leaf(address receiver) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(receiver));
+    }
+
+    /// @notice Verifies a merkle proof
+    /// @param leaf The leaf to verify
+    /// @param proof The merkle proof
+    function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
+        return MerkleProofLib.verify(proof, _dreamboxRoot, leaf);
     }
 }

@@ -9,7 +9,6 @@ contract DeployPlayPopGo is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
         // -------- Constructor ARGS --------
-        address dreambox = 0x63213bdA247439b1eE3dF04A2a467B9D817a142d;
         address withdrawAddress = 0x4401A1667dAFb63Cff06218A69cE11537de9A101;
         address vrfCoordinator = 0x7a1BaC17Ccc5b313516C5E16fb24f7659aA5ebed;
         string memory preRevealURI = "https://prereveal/";
@@ -23,7 +22,6 @@ contract DeployPlayPopGo is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         PlayPopGo PlayPopGo = new PlayPopGo(
-            dreambox,
             withdrawAddress,
             preRevealURI,
             postRevealedURI,
