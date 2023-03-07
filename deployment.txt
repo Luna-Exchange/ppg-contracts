@@ -1,0 +1,17 @@
+# DREAMBOX Deployment
+0. Set URI in constructor
+1. Set inital token receiver address (multi-sig)
+2. Define number of tokens (30%)
+3. Deploy contract
+4. Open whitelist mint
+5. Pending mint success, then open publicMint
+
+# PFP Deployment
+1. Deploy contracts
+2. Go to chainlink subscription management and add Chainlink tokens
+3. add consumer (ppg contract)
+4. sale status, 0 => closed, 1 => dreambox, 2 => open, 3 => closed
+5. once ready can call startReveal
+6. set sale to close then revoke ownership
+7. After sale concluded close the sale
+8. Transfer ownerhsip to Amber's multi-sig
