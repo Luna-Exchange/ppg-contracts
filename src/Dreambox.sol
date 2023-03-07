@@ -19,6 +19,7 @@ contract Dreambox is ERC1155, Ownable {
 
     // Checks if the mint is active.
     bool _mintActive = false;
+    bool _openMintActive = false;
 
     // Counter for the number of tokens minted.
     uint256 public _totalMinted;
@@ -31,7 +32,12 @@ contract Dreambox is ERC1155, Ownable {
 
     /// @dev Constructs a new Dreambox contract.
     /// @param uri The URI for the token metadata.
-    constructor(string memory uri) ERC1155(uri) {}
+    constructor(address receiver, uint256[] memory amounts, string memory uri) ERC1155(uri) {
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        _totalMinted += amounts[0];
+        _mintBatch(receiver, ids, amounts, "");
+    }
 
     /// @dev Sets the URI.
     /// @param newuri The new URI.
@@ -50,21 +56,35 @@ contract Dreambox is ERC1155, Ownable {
         _mintActive = true;
     }
 
-    /// @dev Mints a token to the given account.
-    /// @param account The account to mint the token to.
+    function activateOpenMint() public onlyOwner {
+        _openMintActive = true;
+    }
+
+    /// @dev Mints a token to the function caller.
     /// @param proof The Merkle proof for the account.
-    function mint(address account, bytes32[] calldata proof) public {
+    function mint(bytes32[] calldata proof) public {
         if (!_mintActive) revert MintIsNotActive();
-        if (_minters[account]) revert AlreadyMinted();
-        if (tx.origin != account) revert OnlyEOA();
+        if (_minters[msg.sender]) revert AlreadyMinted();
         if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
 
-        if (!_verify(_leaf(account), proof)) revert InvalidMerkleProof(account, proof);
+        if (!_verify(_leaf(msg.sender), proof)) revert InvalidMerkleProof(msg.sender, proof);
 
-        _minters[account] = true;
+        _minters[msg.sender] = true;
         ++_totalMinted;
 
-        _mint(account, 1, 1, "");
+        _mint(msg.sender, 1, 1, "");
+    }
+
+    /// @dev Mints a token to the function caller.
+    function openMint() public {
+        if (!_openMintActive) revert MintIsNotActive();
+        if (_minters[msg.sender]) revert AlreadyMinted();
+        if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
+
+        _minters[msg.sender] = true;
+        ++_totalMinted;
+
+        _mint(msg.sender, 1, 1, "");
     }
 
     /// @dev Constructs a leaf from an account address.

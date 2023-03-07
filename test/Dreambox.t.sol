@@ -25,8 +25,11 @@ contract DreamboxTest is Test {
         vm.deal(owner, 100 ether);
         vm.deal(minter1, 100 ether);
 
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 300;
+
         vm.prank(deployer);
-        dreambox = new Dreambox("https://test-uri");
+        dreambox = new Dreambox(deployer, amounts, "https://test-uri");
         mt = new MerkleTree(false, true, true);
 
         bytes32 hashedminter1 = keccak256(abi.encodePacked(minter1));
@@ -46,6 +49,6 @@ contract DreamboxTest is Test {
         dreambox.setRoot(mt.getRoot());
         vm.stopPrank();
         vm.prank(minter1, address(minter1));
-        dreambox.mint(minter1, proof);
+        dreambox.mint(proof);
     }
 }
