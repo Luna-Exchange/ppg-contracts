@@ -73,6 +73,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     //////////////////////////////////////////////////////////////*/
 
     error SaleIsNotPublic();
+    error SaleIsNotClosed();
     error SaleIsClosed();
     error InvalidAmount();
     error MaxSupplyReached();
@@ -81,16 +82,6 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     error AlreadyRevealed();
     error AlreadyMinted();
     error InvalidMerkleProof(address receiver, bytes32[] proof);
-
-    /*//////////////////////////////////////////////////////////////
-                              MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-
-    // Modifier checks that the caller is not a smart contract
-    modifier callerIsReceiver() {
-        require(tx.origin == msg.sender, "The caller is another contract");
-        _;
-    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -176,6 +167,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     function startReveal() external onlyOwner returns (uint256 requestId) {
         // Function is only callable once
         if (_revealed) revert AlreadyRevealed();
+        if (_saleStatus != SaleStatus.CLOSED) revert SaleIsNotClosed();
 
         requestId = VRF_COORDINATOR_V2.requestRandomWords(
             VRF_GAS_LANE,
@@ -184,12 +176,11 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
             VRF_CALLBACK_GA_LIMIT,
             VRF_NUM_WORDS
         );
-        _revealed = true;
         emit Revealed(requestId);
     }
 
     /// @notice Mints a token for the caller
-    function publicMint() external payable callerIsReceiver {
+    function publicMint() external payable {
         if (_saleStatus != SaleStatus.PUBLIC) revert SaleIsNotPublic();
         if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
         if (_minters[msg.sender] == true) revert AlreadyMinted();
@@ -201,7 +192,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
     }
 
     /// @notice Mints a token for a caller who holds a deambox
-    function dreamboxMint(bytes32[] calldata proof) external callerIsReceiver {
+    function dreamboxMint(bytes32[] calldata proof) external {
         if (_saleStatus != SaleStatus.PUBLIC && _saleStatus != SaleStatus.DREAMBOX) revert SaleIsNotPublic();
         if (_totalMinted >= _maxSupply) revert MaxSupplyReached();
         if (_minters[msg.sender] == true) revert AlreadyMinted();
@@ -226,7 +217,7 @@ contract PlayPopGo is ERC721, Ownable, VRFConsumerBaseV2 {
         // If metadata is unrevealed, return the unrevealed URI
         if (!_revealed) return _preRevealURI;
 
-        string memory id = LibString.toString(((tokenId + _offset) % _maxSupply));
+        string memory id = LibString.toString(((tokenId + _offset) % _totalMinted));
         return string.concat(_postRevealURI, id);
     }
 
