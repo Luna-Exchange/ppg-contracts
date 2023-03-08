@@ -171,19 +171,26 @@ contract PlayPopGoTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_startReveal() public {
-        vm.prank(owner);
+        vm.startPrank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.PUBLIC);
+        vm.expectRevert(PlayPopGo.SaleIsNotClosed.selector);
+        playPopGo.startReveal();
+        vm.stopPrank();
 
         vm.prank(minter1, address(minter1));
         playPopGo.publicMint{value: 0.1 ether}();
 
-        vm.prank(owner);
-        playPopGo.startReveal();
-        assertEq(playPopGo._revealed(), true);
+        vm.startPrank(owner);
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
+        uint256 requestId = playPopGo.startReveal();
 
-        vm.prank(owner);
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = 1;
+        vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
+
         vm.expectRevert(PlayPopGo.AlreadyRevealed.selector);
         playPopGo.startReveal();
+        vm.stopPrank();
 
         vm.prank(minter1);
         vm.expectRevert("Ownable: caller is not the owner");
@@ -357,23 +364,26 @@ contract PlayPopGoTest is Test {
     }
 
     function test_tokenURIRevealed() public {
-        // Start off by requesting random offset
-        vm.startPrank(owner);
+        vm.prank(owner);
         playPopGo.setSaleStatus(PlayPopGo.SaleStatus.PUBLIC);
-        uint256 requestId = playPopGo.startReveal();
-        vm.stopPrank();
-        // Create a uint256 array and push 100
-        uint256[] memory randomWords = new uint256[](1);
-        randomWords[0] = 9999;
-        vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
 
         vm.prank(minter1, address(minter1));
         playPopGo.publicMint{value: 0.1 ether}();
         vm.prank(minter2, address(minter2));
         playPopGo.publicMint{value: 0.1 ether}();
 
+        // Start off by requesting random offset
+        vm.startPrank(owner);
+        playPopGo.setSaleStatus(PlayPopGo.SaleStatus.CLOSED);
+        uint256 requestId = playPopGo.startReveal();
+        vm.stopPrank();
+        // Create a uint256 array and push 100
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = 1;
+        vrfCoordinator.fulfillRandomWords(requestId, address(playPopGo), randomWords);
+
         string memory tokenURI1 = playPopGo.tokenURI(0);
-        assertEq(tokenURI1, "https://postRevealURI/9999");
+        assertEq(tokenURI1, "https://postRevealURI/1");
         string memory tokenURI2 = playPopGo.tokenURI(1);
         assertEq(tokenURI2, "https://postRevealURI/0");
     }
