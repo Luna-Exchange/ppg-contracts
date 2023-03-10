@@ -73,7 +73,7 @@ contract Dreambox is ERC1155, Ownable {
 
     /// @dev Mints a token to the function caller.
     /// @param proof The Merkle proof for the account.
-    function mint(bytes32[] calldata proof) public {
+    function mint(bytes32[] calldata proof) external {
         if (!_mintActive) revert MintIsNotActive();
         if (_minters[msg.sender]) revert AlreadyMinted();
         if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
@@ -87,7 +87,7 @@ contract Dreambox is ERC1155, Ownable {
     }
 
     /// @dev Mints a token to the function caller.
-    function openMint() public {
+    function openMint() external {
         if (!_openMintActive) revert MintIsNotActive();
         if (_minters[msg.sender]) revert AlreadyMinted();
         if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
