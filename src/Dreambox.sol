@@ -56,8 +56,19 @@ contract Dreambox is ERC1155, Ownable {
         _mintActive = true;
     }
 
+    /// @dev Activates the open mint.
     function activateOpenMint() public onlyOwner {
         _openMintActive = true;
+    }
+
+    /// @dev Closes the mint.
+    function deactivateMint() public onlyOwner {
+        _mintActive = false;
+    }
+
+    /// @dev Closes the open mint.
+    function deactivateOpenMint() public onlyOwner {
+        _openMintActive = false;
     }
 
     /// @dev Mints a token to the function caller.
