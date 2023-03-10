@@ -1,5 +1,8 @@
 {
   "mumbai": {
     "dreambox": "0x8Dc27175dca97Bc433e5b93298eF4E71C56d3014"
+  },
+  "goerli": {
+    "dreambox": "0x3803856585A7fbC6A3bCa94A0b9C49a48af90DD3"
   }
 }
