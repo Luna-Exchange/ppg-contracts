@@ -15,7 +15,7 @@ error InvalidMerkleProof(address receiver, bytes32[] proof);
 /// @author Clique
 contract Dreambox is ERC1155, Ownable {
     // The total supply of tokens will be capped at 3000.
-    uint256 constant MAX_SUPPLY = 3000;
+    uint256 constant MAX_SUPPLY = 3333;
 
     // Checks if the mint is active.
     bool _mintActive = false;
