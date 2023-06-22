@@ -3,12 +3,11 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../src/Dreambox.sol";
-import {MerkleTree} from "./utils/MerkleTree/MerkleTree.sol";
+
 
 contract DreamboxTest is Test {
-    MerkleTree public mt;
     Dreambox dreambox;
-    address deployer;
+    address relayer;
     address owner;
     address minter1;
     address minter2;
@@ -16,7 +15,7 @@ contract DreamboxTest is Test {
     address minter4;
 
     function setUp() public {
-        deployer = makeAddr("deployer");
+        relayer = makeAddr("relayer");
         owner = makeAddr("owner");
         minter1 = makeAddr("minter1");
         minter2 = makeAddr("minter2");
@@ -24,31 +23,55 @@ contract DreamboxTest is Test {
         minter4 = makeAddr("minter4");
         vm.deal(owner, 100 ether);
         vm.deal(minter1, 100 ether);
+        vm.deal(minter2, 100 ether);
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = 300;
 
-        vm.prank(deployer);
-        dreambox = new Dreambox(deployer, amounts, "https://test-uri");
-        mt = new MerkleTree(false, true, true);
+        vm.startPrank(owner);
+        dreambox = new Dreambox("https://test-uri/", relayer);
+        dreambox.setNftPrice(0.1 ether);
+        vm.stopPrank();
+    }
+    
+    function test_revertMintWhen_mintActivity_false() public {
+        vm.expectRevert(MintIsNotActive.selector);
+        vm.prank(minter1);
+        dreambox.mint(minter1, 1, 100);
+    }
 
-        bytes32 hashedminter1 = keccak256(abi.encodePacked(minter1));
-        bytes32 hashedminter2 = keccak256(abi.encodePacked(minter2));
-        bytes32 hashedminter3 = keccak256(abi.encodePacked(minter3));
-        bytes32 hashedminter4 = keccak256(abi.encodePacked(minter4));
-        mt.addLeaf(hashedminter1, false);
-        mt.addLeaf(hashedminter2, false);
-        mt.addLeaf(hashedminter3, false);
-        mt.addLeaf(hashedminter4, false);
+    function test_revertMintWhen_notEnoughMoney() public {
+        vm.prank(owner);
+        dreambox.setMintActive(true);
+        vm.expectRevert(NotEnoughMoneyToBuyNft.selector);
+        vm.prank(minter1);
+        dreambox.mint{value: 1 ether}(minter1, 1, 100);
+    }
+
+    function test_revertMintWhen_relayerTryDoubleClaim() public {
+        vm.prank(owner);
+        dreambox.setMintActive(true);
+        vm.startPrank(relayer);
+        dreambox.mint{value: 0 ether}(minter2, 1, 100);
+        assertEq(dreambox.balanceOf(minter2, 1), 100);
+        vm.expectRevert(AlreadyClaimed.selector);
+        dreambox.mint(minter2, 1, 100);
     }
 
     function test_dreamboxMint() public {
-        bytes32[] memory proof = mt.getProof(keccak256(abi.encodePacked(minter1)));
-        vm.startPrank(deployer);
-        dreambox.activateMint();
-        dreambox.setRoot(mt.getRoot());
+        vm.prank(owner);
+        dreambox.setMintActive(true);
+        vm.startPrank(minter1);
+        dreambox.mint{value: 10 ether}(minter1, 1, 100);
+        assertEq(dreambox.balanceOf(minter1, 1), 100);
+        dreambox.mint{value: 10 ether}(minter1, 1, 100);
+        assertEq(dreambox.balanceOf(minter1, 1), 200);
+        dreambox.mint{value: 5 ether}(minter1, 2, 50);
+        assertEq(dreambox.balanceOf(minter1, 2), 50);
         vm.stopPrank();
-        vm.prank(minter1, address(minter1));
-        dreambox.mint(proof);
+
+        vm.prank(minter2);
+        dreambox.mint{value: 10 ether}(minter2, 1, 100);
+        assertEq(dreambox.balanceOf(minter2, 1), 100);
     }
 }
