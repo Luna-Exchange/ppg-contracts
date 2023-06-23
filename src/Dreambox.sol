@@ -27,7 +27,7 @@ contract Dreambox is ERC1155, Ownable {
     event SetRelayer(address relayer);
 
     // Mapping of account addresses that have already minted a dreambox.
-    mapping(address => bool) public claimed;
+    mapping(address => mapping(uint256 => bool)) public claimed;
 
     // Counter for the number of tokens minted.
     mapping(uint256 => uint256) public totalMinted;
@@ -113,14 +113,15 @@ contract Dreambox is ERC1155, Ownable {
      */
     function mint(
         address recipient, 
+        uint256 orderId,
         uint256 tokenId,
         uint256 amount
     ) external payable {
         if (!mintActive) revert MintIsNotActive();
 
         if(msg.sender == relayer) {
-            if (claimed[recipient]) revert AlreadyClaimed();
-            claimed[recipient] = true;
+            if (claimed[recipient][orderId]) revert AlreadyClaimed();
+            claimed[recipient][orderId] = true;
         }
         else 
             if(msg.value != nftPrice * amount) revert NotEnoughMoneyToBuyNft();
