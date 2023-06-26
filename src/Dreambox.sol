@@ -7,127 +7,107 @@ import "solmate/utils/MerkleProofLib.sol";
 
 error MaxSupplyReached();
 error MintIsNotActive();
-error AlreadyClaimed();
+error AlreadyMinted();
 error OnlyEOA();
-error NotEnoughMoneyToBuyNft();
+error InvalidMerkleProof(address receiver, bytes32[] proof);
 
 /// @title Dreambox Contract
-/// @author Insomnia Labs
+/// @author Clique
 contract Dreambox is ERC1155, Ownable {
-    // Emitted when URI is set.
-    event SetURI(string uri);
-
-    // Emitted when mintActive is set.
-    event SetMintActive(bool mintActive);
-
-    // Emitted when token price is set.
-    event SetNftPrice(uint256 nftPrice);
-    
-    // Emitted when relayer is set.
-    event SetRelayer(address relayer);
-
-    // Mapping of account addresses that have already minted a dreambox.
-    mapping(address => mapping(uint256 => bool)) public claimed;
-
-    // Counter for the number of tokens minted.
-    mapping(uint256 => uint256) public totalMinted;
-
-    // Checks if the mint is active.
-    bool mintActive = false;
-
     // The total supply of tokens will be capped at 3000.
     uint256 constant MAX_SUPPLY = 3333;
 
-    // NFT price
-    uint256 public nftPrice;
+    // Checks if the mint is active.
+    bool _mintActive = false;
+    bool _openMintActive = false;
 
-    // The Relayer address
-    address public relayer;
+    // Counter for the number of tokens minted.
+    uint256 public _totalMinted;
 
-    /**
-     * @dev Constructs a new Dreambox contract.
-     * @param _uri The URI for the token metadata.
-     * @param _relayer The address of the relayer.
-     */
-    constructor(
-        string memory _uri,
-        address _relayer
-    ) ERC1155(_uri) {
-        relayer = _relayer;
+    // The Merkle root of the account addresses that are allowed to mint tokens.
+    bytes32 public _root;
+
+    // Mapping of account addresses that have already minted a dreambox.
+    mapping(address => bool) public _minters;
+
+    /// @dev Constructs a new Dreambox contract.
+    /// @param uri The URI for the token metadata.
+    constructor(address receiver, uint256[] memory amounts, string memory uri) ERC1155(uri) {
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        _totalMinted += amounts[0];
+        _mintBatch(receiver, ids, amounts, "");
     }
 
-    /**
-     * @dev Returns the URI for a given token ID.
-     * @param tokenId The token ID.
-     * @return The URI string.
-     */
-    function uri(uint256 tokenId) public view override returns (string memory) {
-        return string(abi.encodePacked(super.uri(tokenId), tokenId));
+    /// @dev Sets the URI.
+    /// @param newuri The new URI.
+    function setURI(string memory newuri) public onlyOwner {
+        _setURI(newuri);
     }
 
-    /**
-     * @dev Sets the URI for the token metadata.
-     * Only the contract owner can call this function.
-     * @param _uri The new URI.
-     */
-    function setURI(string memory _uri) external onlyOwner {
-        _setURI(_uri);
-        emit SetURI(_uri);
+    /// @dev Sets the Merkle root.
+    /// @param root The new Merkle root.
+    function setRoot(bytes32 root) public onlyOwner {
+        _root = root;
     }
 
-    /**
-     * @dev Activates or closes the minting process.
-     * Only the contract owner can call this function.
-     * @param _mintActive The mintActive status.
-     */
-    function setMintActive(bool _mintActive) external onlyOwner {
-        mintActive = _mintActive;
-        emit SetMintActive(_mintActive);
+    /// @dev Activates the mint.
+    function activateMint() public onlyOwner {
+        _mintActive = true;
     }
 
-    /**
-     * @dev Sets the price of the NFT.
-     * Only the contract owner can call this function.
-     * @param _nftPrice The new NFT price.
-     */
-    function setNftPrice(uint256 _nftPrice) external onlyOwner {
-        nftPrice = _nftPrice;
-        emit SetNftPrice(_nftPrice);
+    /// @dev Activates the open mint.
+    function activateOpenMint() public onlyOwner {
+        _openMintActive = true;
     }
 
-    /**
-     * @dev Sets the address of the relayer.
-     * Only the contract owner can call this function.
-     * @param _relayer The new relayer address.
-     */
-    function setRelayer(address _relayer) external onlyOwner {
-        relayer = _relayer;
-        emit SetRelayer(_relayer);
+    /// @dev Closes the mint.
+    function deactivateMint() public onlyOwner {
+        _mintActive = false;
     }
 
-    /**
-     * @dev Mints NFTs and sends them to the recipient.
-     * @param recipient The address of the NFT recipient.
-     * @param tokenId The token ID of the NFT.
-     * @param amount The amount of NFTs to mint.
-     */
-    function mint(
-        address recipient, 
-        uint256 orderId,
-        uint256 tokenId,
-        uint256 amount
-    ) external payable {
-        if (!mintActive) revert MintIsNotActive();
+    /// @dev Closes the open mint.
+    function deactivateOpenMint() public onlyOwner {
+        _openMintActive = false;
+    }
 
-        if(msg.sender == relayer) {
-            if (claimed[recipient][orderId]) revert AlreadyClaimed();
-            claimed[recipient][orderId] = true;
-        }
-        else 
-            if(msg.value != nftPrice * amount) revert NotEnoughMoneyToBuyNft();
-        
-        totalMinted[tokenId] += amount;
+    /// @dev Mints a token to the function caller.
+    /// @param proof The Merkle proof for the account.
+    function mint(bytes32[] calldata proof) external {
+        if (!_mintActive) revert MintIsNotActive();
+        if (_minters[msg.sender]) revert AlreadyMinted();
+        if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
 
-        _mint(recipient, tokenId, amount, "");
+        if (!_verify(_leaf(msg.sender), proof)) revert InvalidMerkleProof(msg.sender, proof);
+
+        _minters[msg.sender] = true;
+        ++_totalMinted;
+
+        _mint(msg.sender, 1, 1, "");
+    }
+
+    /// @dev Mints a token to the function caller.
+    function openMint() external {
+        if (!_openMintActive) revert MintIsNotActive();
+        if (_minters[msg.sender]) revert AlreadyMinted();
+        if (_totalMinted >= MAX_SUPPLY) revert MaxSupplyReached();
+
+        _minters[msg.sender] = true;
+        ++_totalMinted;
+
+        _mint(msg.sender, 1, 1, "");
+    }
+
+    /// @dev Constructs a leaf from an account address.
+    /// @param account The account address.
+    function _leaf(address account) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(account));
+    }
+
+    /// @dev Verifies a Merkle proof.
+    /// @param leaf The leaf to verify.
+    /// @param proof The Merkle proof.
+    function _verify(bytes32 leaf, bytes32[] calldata proof) internal view returns (bool) {
+        return MerkleProofLib.verify(proof, _root, leaf);
     }
 }
