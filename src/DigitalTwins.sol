@@ -5,10 +5,10 @@ import "openzeppelin/token/ERC1155/ERC1155.sol";
 import "openzeppelin/access/Ownable.sol";
 import "solmate/utils/MerkleProofLib.sol";
 
-error MaxSupplyReached();
 error MintIsNotActive();
 error AlreadyClaimed();
-error OnlyEOA();
+error InvalidTokenId();
+error OnlyOneTokenIdPossible();
 error NotEnoughMoneyToBuyNft();
 
 /// @title DigitalTwins Contract
@@ -27,16 +27,10 @@ contract DigitalTwins is ERC1155, Ownable {
     event SetRelayer(address relayer);
 
     // Mapping of account addresses that have already minted a dreambox.
-    mapping(address => mapping(uint256 => bool)) public claimed;
-
-    // Counter for the number of tokens minted.
-    mapping(uint256 => uint256) public totalMinted;
+    mapping(uint256 => bool) public claimed;
 
     // Checks if the mint is active.
     bool mintActive = false;
-
-    // The total supply of tokens will be capped at 3000.
-    uint256 constant MAX_SUPPLY = 3333;
 
     // NFT price
     uint256 public nftPrice;
@@ -56,6 +50,10 @@ contract DigitalTwins is ERC1155, Ownable {
         relayer = _relayer;
     }
 
+    modifier onlyRelayer {
+        require(msg.sender == relayer);
+        _;
+    }
     /**
      * @dev Returns the URI for a given token ID.
      * @param tokenId The token ID.
@@ -64,7 +62,7 @@ contract DigitalTwins is ERC1155, Ownable {
     function uri(uint256 tokenId) public view override returns (string memory) {
         return string(abi.encodePacked(super.uri(tokenId), tokenId));
     }
-
+    
     /**
      * @dev Sets the URI for the token metadata.
      * Only the contract owner can call this function.
@@ -104,6 +102,26 @@ contract DigitalTwins is ERC1155, Ownable {
         relayer = _relayer;
         emit SetRelayer(_relayer);
     }
+    
+    /**
+     * @dev Mints NFTs and sends them to the recipient.
+     * @param recipient The address of the NFT recipient.
+     * @param tokenIds The token IDs of the NFT.
+     * @param amounts The amounts of NFTs to mint.
+     */
+    function mintRelayer(
+        address recipient, 
+        uint256 orderId,
+        uint256[] memory tokenIds,
+        uint256[] memory amounts
+    ) external onlyRelayer {
+        if (!mintActive) revert MintIsNotActive();
+
+        if (claimed[orderId]) revert AlreadyClaimed();
+        claimed[orderId] = true;
+
+        _mintBatch(recipient, tokenIds, amounts, "");
+    }
 
     /**
      * @dev Mints NFTs and sends them to the recipient.
@@ -113,20 +131,13 @@ contract DigitalTwins is ERC1155, Ownable {
      */
     function mint(
         address recipient, 
-        uint256 orderId,
         uint256 tokenId,
         uint256 amount
     ) external payable {
         if (!mintActive) revert MintIsNotActive();
 
-        if(msg.sender == relayer) {
-            if (claimed[recipient][orderId]) revert AlreadyClaimed();
-            claimed[recipient][orderId] = true;
-        }
-        else 
-            if(msg.value != nftPrice * amount) revert NotEnoughMoneyToBuyNft();
-        
-        totalMinted[tokenId] += amount;
+        if(tokenId > 18) revert InvalidTokenId();
+        if(msg.value != nftPrice * amount) revert NotEnoughMoneyToBuyNft();
 
         _mint(recipient, tokenId, amount, "");
     }
